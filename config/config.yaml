@@ -1,0 +1,9 @@
+samples_path: './config/samples.tsv'
+refgen_path: '../refgen/mm10_SB_CTCF.fa'
+chrom_sizes_path: '../refgen/chromsizes.txt'
+
+cassette_name: 'SB_cargo_CTCF_gDNA'
+# Coordinate of the 5' of the PCR1 primer
+# alignments with 5' end +- 10 bp of this coordinate will be kept
+reverse_ITR_primer_position: 1899
+forward_ITR_primer_position: 4327

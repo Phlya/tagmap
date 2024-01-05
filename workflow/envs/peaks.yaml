@@ -1,0 +1,9 @@
+name: coverage
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - python>=3.8
+  - bioframe
+  - scikit-image
