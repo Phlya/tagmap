@@ -181,8 +181,14 @@ rule find_insertion_sites:
     benchmark:
         "benchmarks/find_insertion_sites/{sample}.tsv"
     threads: 1
+    params:
+        refgen_path=os.path.abspath(config['refgen_path']),
+        insertion_seq=config['insertion_seq'],
+        sample=lambda wildcards: wildcards.sample,
     shell:
         """
-        python3 workflow/scripts/find_insertion_sites.py -f {input.f} -r {input.r} -o {output} \
+        python3 workflow/scripts/find_insertion_sites.py -f {input.f} -r {input.r} \
+        --genome {params.refgen_path} --insertion-seq {params.insertion_seq} \
+        --sample-name {params.sample} -o {output} \
         >{log[0]} 2>&1
         """
