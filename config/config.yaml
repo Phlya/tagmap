@@ -7,3 +7,6 @@ cassette_name: 'SB_cargo_CTCF_gDNA'
 # alignments with 5' end +- 10 bp of this coordinate will be kept
 reverse_ITR_primer_position: 1899
 forward_ITR_primer_position: 4327
+
+# Peak calling
+min_peak_width: 50

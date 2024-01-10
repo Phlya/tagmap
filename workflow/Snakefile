@@ -10,7 +10,7 @@ idx = multiext(
         ".sa",
     )
 
-samples = pd.read_table(config["samples_path"], index_col=0).to_dict(orient='index')
+samples = pd.read_table(config["samples_path"], index_col=0, comment='#').to_dict(orient='index')
 
 wildcard_constraints:
     sample=f"({'|'.join([re.escape(run) for run in samples.keys()])})",
@@ -18,8 +18,8 @@ wildcard_constraints:
 
 rule all:
     input:
-        expand("../Data/Processed/peaks/{sample}_{side}.bed",
-        sample=samples.keys(), side=['forward', 'reverse'])
+        expand("../Data/Processed/insertion_sites/{sample}.bed",
+        sample=samples.keys())
 
 rule bwaindex:
     input:
@@ -33,7 +33,7 @@ rule bwaindex:
         f"logs/bwa-memx_index/{os.path.basename(config['refgen_path'])[-1]}.log",
     cache: True
     wrapper:
-        "v2.2.1/bio/bwa-memx/index"
+        "v3.3.3/bio/bwa-memx/index"
 
 rule map:
     input:
@@ -46,7 +46,7 @@ rule map:
         bwa='bwa-mem',
         sort="none",
         dedup="none",
-    threads: 8
+    threads: 16
     output:
         "../Data/Processed/bams/{sample}.bam",
     log:
@@ -54,32 +54,20 @@ rule map:
     benchmark:
         "benchmarks/bwa_memx/{sample}.tsv"
     wrapper:
-        "v2.2.1/bio/bwa-memx/mem"
-
-rule index:
-    input:
-        "../Data/Processed/bams/{sample}.bam",
-    output:
-        "../Data/Processed/bams/{sample}.bam.bai",
-    log:
-        "logs/bwa_memx/{sample}.log",
-    benchmark:
-        "benchmarks/bwa_memx/{sample}.tsv"
-    wrapper:
-        "v2.2.1/bio/samtools/index"
+        "v3.3.3/bio/bwa-memx/mem"
 
 rule parse_sort:
     input:
         "../Data/Processed/bams/{sample}.bam",
     output:
-        "../Data/Processed/pairs/{sample}.pairs.gz",
+        pipe("../Data/Processed/pairs/{sample}.pairs.gz"),
     conda:
         "envs/pairtools_env.yaml",
     log:
         "logs/parse/{sample}.log",
     benchmark:
         "benchmarks/parse/{sample}.tsv"
-    threads: 8
+    threads: 16
     params:
         chrom_sizes_path=config['chrom_sizes_path'],
         cassette_name=config['cassette_name'],
@@ -94,14 +82,14 @@ rule get_side_pairs:
     input:
         "../Data/Processed/pairs/{sample}.pairs.gz",
     output:
-        "../Data/Processed/pairs/{sample}_{side}.pairs.gz",
+        pipe("../Data/Processed/pairs/{sample}_{side}.pairs.gz"),
     conda:
         "envs/pairtools_env.yaml",
     log:
         "logs/get_side_pairs/{sample}_{side}.log",
     benchmark:
         "benchmarks/get_side_pairs/{sample}_{side}.tsv"
-    threads: 8
+    threads: 4
     params:
         selection_chrom = config['cassette_name'],
         selection_start = lambda wildcards: config[f'{wildcards.side}_ITR_primer_position']-10,
@@ -131,7 +119,7 @@ rule dedup:
         "logs/dedup/{sample}_{side}.log",
     benchmark:
         "benchmarks/dedup/{sample}_{side}.tsv"
-    threads: 8
+    threads: 1
     shell:
         """
         pairtools dedup --backend cython --max-mismatch 0 {input} \
@@ -143,17 +131,19 @@ rule coverage:
     input:
         "../Data/Processed/pairs/{sample}_{side}_nodups.pairs.gz",
     output:
-        "../Data/Processed/coverage/{sample}_{side}_coverage.bedgraph",
+        bg="../Data/Processed/coverage/{sample}_{side}_coverage.bedgraph",
+        bw="../Data/Processed/coverage/{sample}_{side}_coverage.bw",
     conda:
         "envs/pairtools_env.yaml",
     log:
         "logs/coverage/{sample}_{side}.log",
     benchmark:
         "benchmarks/coverage/{sample}_{side}.tsv"
-    threads: 8
+    threads: 1
     shell:
         """
-        python3 workflow/scripts/coverage.py -i {input} -o {output} \
+        python3 workflow/scripts/coverage.py -i {input} -o {output.bg} \
+        --output-bigwig {output.bw} \
         >{log[0]} 2>&1
         """
 
@@ -169,8 +159,30 @@ rule find_peaks:
     benchmark:
         "benchmarks/find_peaks/{sample}_{side}.tsv"
     threads: 1
+    params:
+        min_peak_width=config['min_peak_width'],
     shell:
         """
         python3 workflow/scripts/find_peaks.py -i {input} -o {output} \
+        --min-peak-width {params.min_peak_width} \
+        >{log[0]} 2>&1
+        """
+
+rule find_insertion_sites:
+    input:
+        f="../Data/Processed/peaks/{sample}_forward.bed",
+        r="../Data/Processed/peaks/{sample}_reverse.bed",
+    output:
+        "../Data/Processed/insertion_sites/{sample}.bed",
+    conda:
+        "envs/peaks.yaml",
+    log:
+        "logs/find_insertion_sites/{sample}.log",
+    benchmark:
+        "benchmarks/find_insertion_sites/{sample}.tsv"
+    threads: 1
+    shell:
+        """
+        python3 workflow/scripts/find_insertion_sites.py -f {input.f} -r {input.r} -o {output} \
         >{log[0]} 2>&1
         """

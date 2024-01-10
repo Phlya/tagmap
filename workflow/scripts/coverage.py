@@ -1,6 +1,6 @@
 import numpy as np
 
-# import bioframe
+import bioframe
 import pandas as pd
 from pairtools.lib import fileio, headerops
 import argparse
@@ -9,6 +9,7 @@ argparser = argparse.ArgumentParser()
 argparser.add_argument("--input", "-i", type=str)
 argparser.add_argument("--side", "-s", type=int, choices=[1, 2], default=1)
 argparser.add_argument("--output", "-o", type=str)
+argparser.add_argument("--output-bigwig", type=str, default=None, required=False)
 
 
 def read_pairs(pairs, chunksize=None):
@@ -88,12 +89,17 @@ def coverage_single_chrom(chrom_df, chromsize):
 args = argparser.parse_args()
 
 pairs, chromsizes = read_pairs(args.input)
+
 if pairs.shape[0] == 0:
     open(args.output, "w").close()
     exit()
+
 s = args.side
-pairs["start"] = np.minimum(pairs[f"pos5{s}"], pairs[f"pos3{s}"])
-pairs["end"] = np.maximum(pairs[f"pos5{s}"], pairs[f"pos3{s}"])
+pairs["start"] = pairs[f"pos3{s}"]
+pairs["end"] = pairs[f"pos3{s}"] + np.sign(
+    (pairs[f"strand{s}"] == "+").astype(int) - 0.5
+).astype(int)
+pairs[["start", "end"]] = np.sort(pairs[["start", "end"]], axis=1)
 pairs["chrom"] = pairs[f"chrom{s}"]
 
 pairs = pairs[["chrom", "start", "end"]]
@@ -106,7 +112,9 @@ coverage_df = pd.concat(
         for chrom, chrom_reads in pairs.groupby("chrom")
     ]
 ).reset_index(drop=True)[["chrom", "start", "end", "count"]]
+coverage_df = coverage_df[coverage_df["count"] > 0]
 
 coverage_df.to_csv(args.output, sep="\t", index=False, header=False)
 
-# bioframe.to_bigwig(coverage_df, chromsizes, args.output)
+if args.output_bigwig is not None:
+    bioframe.to_bigwig(coverage_df, chromsizes, args.output_bigwig)
