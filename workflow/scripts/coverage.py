@@ -8,16 +8,17 @@ import argparse
 argparser = argparse.ArgumentParser()
 argparser.add_argument("--input", "-i", type=str)
 argparser.add_argument("--side", "-s", type=int, choices=[1, 2], default=1)
+argparser.add_argument("--threads", "-t", type=int, default=1)
 argparser.add_argument("--output", "-o", type=str)
 argparser.add_argument("--output-bigwig", type=str, default=None, required=False)
 
 
-def read_pairs(pairs, chunksize=None):
+def read_pairs(pairs, threads=1, chunksize=None):
     pairs_stream = (
         fileio.auto_open(
             pairs,
             mode="r",
-            nproc=10,
+            nproc=threads,
         )
         if isinstance(pairs, str)
         else pairs
@@ -41,16 +42,16 @@ def read_pairs(pairs, chunksize=None):
     return pairs_df, chromsizes
 
 
-def pairs_to_pairs_merged(pairs_df):
-    pairs_bf1 = pairs_df[[c for c in pairs_df.columns if c.endswith("1")]]
-    pairs_bf1.columns = [c[:-1] for c in pairs_df.columns if c.endswith("1")]
+# def pairs_to_pairs_merged(pairs_df):
+#     pairs_bf1 = pairs_df[[c for c in pairs_df.columns if c.endswith("1")]]
+#     pairs_bf1.columns = [c[:-1] for c in pairs_df.columns if c.endswith("1")]
 
-    pairs_bf2 = pairs_df[[c for c in pairs_df.columns if c.endswith("2")]]
-    pairs_bf2.columns = [c[:-1] for c in pairs_df.columns if c.endswith("2")]
+#     pairs_bf2 = pairs_df[[c for c in pairs_df.columns if c.endswith("2")]]
+#     pairs_bf2.columns = [c[:-1] for c in pairs_df.columns if c.endswith("2")]
 
-    pairs_df = pd.concat([pairs_bf1, pairs_bf2])
+#     pairs_df = pd.concat([pairs_bf1, pairs_bf2])
 
-    return pairs_df
+#     return pairs_df
 
 
 def intervals_to_increments(df):
@@ -88,7 +89,7 @@ def coverage_single_chrom(chrom_df, chromsize):
 
 args = argparser.parse_args()
 
-pairs, chromsizes = read_pairs(args.input)
+pairs, chromsizes = read_pairs(args.input, threads=args.threads)
 
 if pairs.shape[0] == 0:
     open(args.output, "w").close()
@@ -96,9 +97,7 @@ if pairs.shape[0] == 0:
 
 s = args.side
 pairs["start"] = pairs[f"pos3{s}"]
-pairs["end"] = pairs[f"pos3{s}"] + np.sign(
-    (pairs[f"strand{s}"] == "+").astype(int) - 0.5
-).astype(int)
+pairs["end"] = pairs[f"pos3{s}"] + np.where(pairs[f"strand{s}"] == "+", 1, -1)
 pairs[["start", "end"]] = np.sort(pairs[["start", "end"]], axis=1)
 pairs["chrom"] = pairs[f"chrom{s}"]
 
@@ -113,6 +112,7 @@ coverage_df = pd.concat(
     ]
 ).reset_index(drop=True)[["chrom", "start", "end", "count"]]
 coverage_df = coverage_df[coverage_df["count"] > 0]
+coverage_df["fraction"] = coverage_df["count"] / coverage_df["count"].sum()
 
 coverage_df.to_csv(args.output, sep="\t", index=False, header=False)
 

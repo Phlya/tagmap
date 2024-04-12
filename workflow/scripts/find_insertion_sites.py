@@ -3,7 +3,6 @@ import pandas as pd
 import bioframe
 from Bio import SeqIO
 
-import os
 import argparse
 
 argparser = argparse.ArgumentParser()
@@ -19,17 +18,21 @@ f = pd.read_csv(
     args.forward_peaks,
     sep="\t",
     header=None,
-    names=["chrom", "start", "end", "name", "count"],
+    names=["chrom", "start", "end", "count", "fraction"],
+    dtype={"chrom": str, "start": int, "end": int, "count": int, "fraction": float},
 )
 r = pd.read_csv(
     args.reverse_peaks,
     sep="\t",
     header=None,
-    names=["chrom", "start", "end", "name", "count"],
+    names=["chrom", "start", "end", "count", "fraction"],
+    dtype={"chrom": str, "start": int, "end": int, "count": int, "fraction": float},
 )
 
 
-overlap = bioframe.overlap(f, r, how="inner")
+overlap = bioframe.overlap(
+    bioframe.expand(f, 500), bioframe.expand(r, 500), how="inner"
+)
 if len(overlap) == 0:
     open(args.output, "w").close()
     exit()
@@ -43,6 +46,7 @@ end = overlap[["end", "end_"]].min(axis=1)
 strand = np.where(start == overlap["start"], "+", "-")
 overlap = overlap.assign(start=start, end=end, strand=strand)
 overlap = overlap.drop(columns=["start_", "end_"])
+# overlap = bioframe.expand(overlap, -500)
 
 pinpointed = []
 for record in SeqIO.parse(args.genome, "fasta"):
