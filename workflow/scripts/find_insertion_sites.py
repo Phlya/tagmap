@@ -6,28 +6,31 @@ from Bio import SeqIO
 import argparse
 
 argparser = argparse.ArgumentParser()
-argparser.add_argument("--forward-peaks", "-f", type=str)
-argparser.add_argument("--reverse-peaks", "-r", type=str)
+argparser.add_argument("--peaks", type=str)
 argparser.add_argument("--sample-name", type=str, default=".")
 argparser.add_argument("--genome", "-g", type=str)
 argparser.add_argument("--insertion-seq", type=str, default="TA")
 argparser.add_argument("--output", "-o", type=str)
 args = argparser.parse_args()
 
-f = pd.read_csv(
-    args.forward_peaks,
+peaks = pd.read_csv(
+    args.peaks,
     sep="\t",
     header=None,
-    names=["chrom", "start", "end", "count", "fraction"],
-    dtype={"chrom": str, "start": int, "end": int, "count": int, "fraction": float},
+    names=["chrom", "start", "end", "sample_name", "count", "fraction", "side"],
+    dtype={
+        "chrom": str,
+        "start": int,
+        "end": int,
+        "count": int,
+        "fraction": float,
+        "side": str,
+        "sample_name": str,
+    },
 )
-r = pd.read_csv(
-    args.reverse_peaks,
-    sep="\t",
-    header=None,
-    names=["chrom", "start", "end", "count", "fraction"],
-    dtype={"chrom": str, "start": int, "end": int, "count": int, "fraction": float},
-)
+
+f = peaks[peaks["side"] == "+"]
+r = peaks[peaks["side"] == "-"]
 
 
 overlap = bioframe.overlap(
@@ -39,6 +42,9 @@ if len(overlap) == 0:
 
 overlap["count"] = overlap["count"] + overlap["count_"]
 overlap = overlap.drop(columns=["count_"])
+
+overlap["score"] = (overlap["fraction"] + overlap["fraction_"]) / 2 * 1000
+overlap = overlap.drop(columns=["fraction_"])
 
 start = overlap[["start", "start_"]].max(axis=1)
 end = overlap[["end", "end_"]].min(axis=1)
@@ -67,7 +73,9 @@ for record in SeqIO.parse(args.genome, "fasta"):
 pinpointed = pd.DataFrame(pinpointed)
 pinpointed["name"] = args.sample_name
 pinpointed = pinpointed[
-    ["chrom", "start", "end", "name", "count", "strand", "pinpointed"]
+    ["chrom", "start", "end", "name", "score", "strand", "pinpointed"]
 ]
 
-pinpointed.to_csv(args.output, sep="\t", index=False, header=False)
+pinpointed.sort_values(["chrom", "start", "end"]).to_csv(
+    args.output, sep="\t", index=False, header=False
+)

@@ -1,0 +1,4 @@
+chr3	123504800	123505000 # Gets picked up by fwd primer, 9 bp microhomology at 3' end chr3:123,504,858
+chr11	103345000	103341500 # Gets picked up by fwd primer, 9 bp microhomology at 3' end chr11:103,341,106
+chr2	98666000	986675000
+mobilized_enhancer	0	6030

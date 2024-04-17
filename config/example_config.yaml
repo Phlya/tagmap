@@ -1,0 +1,24 @@
+# Configuration file for the tagmap pipeline
+# Path to the .tsv file containing the samples information: sample name and paths to the fastq files
+# Entries with the same sample name will be merged
+samples_path: 'config/samples.tsv'
+refgen_path: '../../../mm10_custom.fa'
+chrom_sizes_path: '../../../mobilization_mapping/mm10_custom_chromsizes.txt'
+# Path to the blacklist file: any peak overlapping this file will be removed
+blacklist: 'resources/blacklist_mm10_PB.bed'
+
+mapper: 'bwa-mem2'
+
+dedup: True
+
+cassette_name: 'mobilized_enhancer'
+# Coordinate of the 5' of the PCR1 primer
+# alignments with 5' end +- 10 bp of this coordinate will be kept
+reverse_ITR_primer_position: 33
+forward_ITR_primer_position: 6001
+insertion_seq: "TTAA"
+# Peak calling
+min_peak_width: 200
+min_peak_reads: 10
+min_peak_frac: 0.01
+

@@ -1,8 +1,14 @@
 import os
+import numpy as np
 import pandas as pd
 
-idx = multiext(
-        config['refgen_path'],
+localrules: all, combine_all_peaks, combine_all_sites, combine_peaks
+
+refgen_path = config["refgen_path"]
+# Depending on the mapper, the index files will be different
+if config["mapper"] == "bwa-mem":
+    idx = multiext(
+        refgen_path,
         ".amb",
         ".ann",
         ".bwt",
@@ -10,44 +16,83 @@ idx = multiext(
         ".sa",
     )
 
-samples = pd.read_table(config["samples_path"], index_col=0, comment='#').to_dict(orient='index')
+elif config["mapper"] == "bwa-mem2":
+    idx = multiext(
+        refgen_path,
+        ".0123",
+        ".amb",
+        ".ann",
+        ".bwt.2bit.64",
+        ".pac",
+    )
+
+elif config['mapper'] == 'bwa-meme':
+    idx = multiext(
+        refgen_path,
+        ".0123",
+        ".amb",
+        ".ann",
+        ".pac",
+        ".pos_packed",
+        ".suffixarray_uint64",
+        ".suffixarray_uint64_L0_PARAMETERS",
+        ".suffixarray_uint64_L1_PARAMETERS",
+        ".suffixarray_uint64_L2_PARAMETERS",
+    )
+else:
+    raise ValueError("""Unknown mapper, allowed values are:
+                        'bwa-mem', 'bwa-mem2' and 'bwa-meme'""")
+
+samples = pd.read_table(config["samples_path"], comment='#')
+sample_list = np.unique(samples['name'].to_numpy())
 
 wildcard_constraints:
-    sample=f"({'|'.join([re.escape(run) for run in samples.keys()])})",
+    sample=f"({'|'.join([re.escape(sample) for sample in sample_list])})",
     side=('forward|reverse')
 
 rule all:
     input:
         expand("../Data/Processed/insertion_sites/{sample}.bed",
-        sample=samples.keys()),
-        "../Data/Processed/peaks/all_merged.bed",
+        sample=sample_list),
+        "../Data/Processed/peaks/all_peaks.bed",
+        "../Data/Processed/insertion_sites/all_sites.bed"
         
 rule bwaindex:
     input:
-        genome=config['refgen_path'],
+        genome=refgen_path,
     output:
         idx=idx,
     params:
-        bwa='bwa-mem',
+        bwa=config['mapper'],
     threads: 8  #Only affects bwa-meme
     log:
-        f"logs/bwa-memx_index/{os.path.basename(config['refgen_path'])[-1]}.log",
+        f"logs/bwa-memx_index/{os.path.basename(refgen_path).rstrip('.fasta')}.log",
     cache: True
     wrapper:
         "v3.3.3/bio/bwa-memx/index"
 
+rule merge_fastq:
+    input:
+        lambda wildcards: samples[samples['name']==wildcards.sample][f'fastq{wildcards.read}'],
+    output:
+        pipe("../Data/Processed/fastq/{sample}.{read}.fastq.gz"),
+    shell:
+        """
+        cat {input} > {output}
+        """
+
 rule map:
     input:
-        reads=lambda wildcards: [samples[wildcards.sample]['fastq1'],
-                                 samples[wildcards.sample]['fastq2']
-        ],
-        reference=config['refgen_path'],
+        reads=lambda wildcards: [f"../Data/Processed/fastq/{wildcards.sample}.R1.fastq.gz",
+                                 f"../Data/Processed/fastq/{wildcards.sample}.R2.fastq.gz"],
+        reference=refgen_path,
         idx=idx,
     params:
-        bwa='bwa-mem',
+        bwa=config['mapper'],
         sort="none",
         dedup="none",
-    threads: 4
+        extra='-SP'
+    threads: 1
     output:
         "../Data/Processed/bams/{sample}.bam",
     log:
@@ -97,7 +142,7 @@ rule parse:
         cassette_name=config['cassette_name'],
     shell:
         """
-        pairtools parse -c {params.chrom_sizes_path} --drop-seq --drop-sam --no-flip \
+        pairtools parse -c {params.chrom_sizes_path} --drop-sam --no-flip \
         --add-columns mapq,pos5,pos3 --report-alignment-end 5 -o {output} {input} \
         >{log[0]} 2>&1
         """
@@ -140,7 +185,7 @@ rule dedup:
 
 rule get_side_pairs:
     input:
-        "../Data/Processed/pairs/{sample}_sorted.pairs",
+        lambda wildcards: "../Data/Processed/pairs/{sample}_nodups.pairs" if config.get('dedup', True) else "../Data/Processed/pairs/{sample}_sorted.pairs",
     output:
         "../Data/Processed/pairs/{sample}_{side}.pairs",
     conda:
@@ -193,7 +238,7 @@ rule find_peaks:
         coverage="../Data/Processed/coverage/{sample}_{side}_coverage.bedgraph",
         script='workflow/scripts/find_peaks.py'
     output:
-        "../Data/Processed/peaks/{sample}_{side}.bed",
+        temp("../Data/Processed/peaks/{sample}_{side}.bed"),
     conda:
         "envs/peaks.yaml",
     log:
@@ -203,10 +248,13 @@ rule find_peaks:
     threads: 1
     params:
         min_peak_width=config['min_peak_width'],
+        min_peak_reads=config['min_peak_reads'],
+        min_peak_frac=config['min_peak_frac']
     shell:
         """
         python3 {input.script} -i {input.coverage} -o {output} \
-        --min-peak-width {params.min_peak_width} \
+        --min-peak-width {params.min_peak_width} --min-peak-frac {params.min_peak_frac} \
+        --min-peak-reads {params.min_peak_reads} \
         >{log[0]} 2>&1
         """
 
@@ -214,9 +262,10 @@ rule combine_peaks:
     input:
         peaks_fwd="../Data/Processed/peaks/{sample}_forward.bed",
         peaks_rev="../Data/Processed/peaks/{sample}_reverse.bed",
+        blacklist=config.get('blacklist', []),
         script='workflow/scripts/combine_peaks.py'
     output:
-        "../Data/Processed/peaks/{sample}_merged.bed",
+        "../Data/Processed/peaks/{sample}_peaks.bed",
     conda:
         "envs/peaks.yaml",
     log:
@@ -224,19 +273,22 @@ rule combine_peaks:
     benchmark:
         "benchmarks/combine_peaks/{sample}.tsv"
     threads: 1
+    params:
+        blacklist_arg = lambda wildcards, input: f"--blacklist {input.blacklist}" if input.blacklist else "",
     shell:
         """
         python3 {input.script} --fwd {input.peaks_fwd} --rev {input.peaks_rev} \
+        {params.blacklist_arg} \
         --sample-name {wildcards.sample} -o {output} \
         >{log[0]} 2>&1
         """
 
 rule combine_all_peaks:
     input:
-        peaks=expand("../Data/Processed/peaks/{sample}_merged.bed",
-                            sample=samples.keys())
+        peaks=expand("../Data/Processed/peaks/{sample}_peaks.bed",
+                            sample=sample_list)
     output:
-        "../Data/Processed/peaks/all_merged.bed",
+        "../Data/Processed/peaks/all_peaks.bed",
     conda:
         "envs/peaks.yaml",
     log:
@@ -246,13 +298,12 @@ rule combine_all_peaks:
     threads: 1
     shell:
         """
-        cat {input.peaks} | sort -k1,1V -k2,2n -k3,3n -k5,5 > {output}
+        cat {input.peaks} | cut -f1,2,3,4,6,7 | sort -k4,4V -k1,1V -k2,2n -k3,3n -k5,5 > {output}
         """
 
 rule find_insertion_sites:
     input:
-        f="../Data/Processed/peaks/{sample}_forward.bed",
-        r="../Data/Processed/peaks/{sample}_reverse.bed",
+        peaks="../Data/Processed/peaks/{sample}_peaks.bed",
         script='workflow/scripts/find_insertion_sites.py'
     output:
         "../Data/Processed/insertion_sites/{sample}.bed",
@@ -264,13 +315,31 @@ rule find_insertion_sites:
         "benchmarks/find_insertion_sites/{sample}.tsv"
     threads: 1
     params:
-        refgen_path=os.path.abspath(config['refgen_path']),
+        refgen_path=refgen_path,
         insertion_seq=config['insertion_seq'],
         sample=lambda wildcards: wildcards.sample,
     shell:
         """
-        python3 {input.script} -f {input.f} -r {input.r} \
+        python3 {input.script} --peaks {input.peaks} \
         --genome {params.refgen_path} --insertion-seq {params.insertion_seq} \
         --sample-name {params.sample} -o {output} \
         >{log[0]} 2>&1
+        """
+
+rule combine_all_sites:
+    input:
+        sites=expand("../Data/Processed/insertion_sites/{sample}.bed",
+                            sample=sample_list)
+    output:
+        "../Data/Processed/insertion_sites/all_sites.bed",
+    conda:
+        "envs/peaks.yaml",
+    log:
+        "logs/combine_all_sites/log.log",
+    benchmark:
+        "benchmarks/combine_all_sites/benchmark.tsv"
+    threads: 1
+    shell:
+        """
+        cat {input.sites} | cut -f1,2,3,4,6,7 | sort -k4,4V -k1,1V -k2,2n -k3,3n -k5,5 > {output}
         """

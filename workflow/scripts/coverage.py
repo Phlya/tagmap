@@ -1,3 +1,5 @@
+from pathlib import Path
+import time
 import numpy as np
 
 import bioframe
@@ -13,7 +15,7 @@ argparser.add_argument("--output", "-o", type=str)
 argparser.add_argument("--output-bigwig", type=str, default=None, required=False)
 
 
-def read_pairs(pairs, threads=1, chunksize=None):
+def read_pairs(pairs, threads=1):
     pairs_stream = (
         fileio.auto_open(
             pairs,
@@ -87,34 +89,37 @@ def coverage_single_chrom(chrom_df, chromsize):
     return count_df
 
 
-args = argparser.parse_args()
+if __name__ == "__main__":
+    args = argparser.parse_args()
 
-pairs, chromsizes = read_pairs(args.input, threads=args.threads)
+    pairs, chromsizes = read_pairs(args.input, threads=args.threads)
 
-if pairs.shape[0] == 0:
-    open(args.output, "w").close()
-    exit()
+    if pairs.shape[0] == 0:
+        Path(args.output).touch()
+        if args.output_bigwig is not None:
+            Path(args.output_bigwig).touch()
+        exit()
 
-s = args.side
-pairs["start"] = pairs[f"pos3{s}"]
-pairs["end"] = pairs[f"pos3{s}"] + np.where(pairs[f"strand{s}"] == "+", 1, -1)
-pairs[["start", "end"]] = np.sort(pairs[["start", "end"]], axis=1)
-pairs["chrom"] = pairs[f"chrom{s}"]
+    s = args.side
+    pairs["start"] = pairs[f"pos{s}"]  # + np.where(pairs[f"strand{s}"] == "+", -1, 1)
+    pairs["end"] = pairs[f"pos{s}"] + 1  # np.where(pairs[f"strand{s}"] == "+", 1, -1)
+    pairs[["start", "end"]] = np.sort(pairs[["start", "end"]], axis=1)
+    pairs["chrom"] = pairs[f"chrom{s}"]
 
-pairs = pairs[["chrom", "start", "end"]]
-pairs.sort_values(["chrom", "start", "end"], inplace=True)
-pairs.reset_index(drop=True, inplace=True)
+    pairs = pairs[["chrom", "start", "end"]]
+    pairs.sort_values(["chrom", "start", "end"], inplace=True)
+    pairs.reset_index(drop=True, inplace=True)
 
-coverage_df = pd.concat(
-    [
-        coverage_single_chrom(chrom_reads, chromsizes[chrom])
-        for chrom, chrom_reads in pairs.groupby("chrom")
-    ]
-).reset_index(drop=True)[["chrom", "start", "end", "count"]]
-coverage_df = coverage_df[coverage_df["count"] > 0]
-coverage_df["fraction"] = coverage_df["count"] / coverage_df["count"].sum()
+    coverage_df = pd.concat(
+        [
+            coverage_single_chrom(chrom_reads, chromsizes[chrom])
+            for chrom, chrom_reads in pairs.groupby("chrom")
+        ]
+    ).reset_index(drop=True)[["chrom", "start", "end", "count"]]
+    coverage_df = coverage_df[coverage_df["count"] > 0]
+    coverage_df["fraction"] = coverage_df["count"] / coverage_df["count"].sum()
+    coverage_df["end"] -= 1
+    coverage_df.to_csv(args.output, sep="\t", index=False, header=False)
 
-coverage_df.to_csv(args.output, sep="\t", index=False, header=False)
-
-if args.output_bigwig is not None:
-    bioframe.to_bigwig(coverage_df, chromsizes, args.output_bigwig)
+    if args.output_bigwig is not None:
+        bioframe.to_bigwig(coverage_df, chromsizes, args.output_bigwig)
