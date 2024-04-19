@@ -5,6 +5,7 @@ samples_path: 'config/samples.tsv'
 refgen_path: '../../../mm10_custom.fa'
 chrom_sizes_path: '../../../mobilization_mapping/mm10_custom_chromsizes.txt'
 # Path to the blacklist file: any peak overlapping this file will be removed
+# Simply delete this line if you don't have a blacklist
 blacklist: 'resources/blacklist_mm10_PB.bed'
 
 mapper: 'bwa-mem2'
