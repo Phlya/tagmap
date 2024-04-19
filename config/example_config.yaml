@@ -17,6 +17,9 @@ cassette_name: 'mobilized_enhancer'
 reverse_ITR_primer_position: 33
 forward_ITR_primer_position: 6001
 insertion_seq: "TTAA"
+
+use_junction_readthrough: False
+
 # Peak calling
 min_peak_width: 200
 min_peak_reads: 10

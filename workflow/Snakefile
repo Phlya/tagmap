@@ -5,6 +5,11 @@ import pandas as pd
 localrules: all, combine_all_peaks, combine_all_sites, combine_peaks
 
 refgen_path = config["refgen_path"]
+
+chromsizes = pd.read_table(config["chrom_sizes_path"], header=None, sep='\t', index_col=0, names=['chrom', 'size'])
+cassette_length = chromsizes.loc[config['cassette_name']]['size']
+
+
 # Depending on the mapper, the index files will be different
 if config["mapper"] == "bwa-mem":
     idx = multiext(
@@ -50,9 +55,18 @@ wildcard_constraints:
     sample=f"({'|'.join([re.escape(sample) for sample in sample_list])})",
     side=('forward|reverse')
 
+if config['use_junction_readthrough']:
+    ruleorder: map_one_sided > map
+    ruleorder: parse2_one_side > parse
+    ruleorder: get_trans_pairs > get_side_pairs
+else:
+    ruleorder: map > map_one_sided
+    ruleorder: parse > parse2_one_side
+    ruleorder: get_side_pairs > get_trans_pairs
+
 rule all:
     input:
-        expand("../Data/Processed/insertion_sites/{sample}.bed",
+        expand("../Data/Processed/pairs/{sample}_stats.yml",
         sample=sample_list),
         "../Data/Processed/peaks/all_peaks.bed",
         "../Data/Processed/insertion_sites/all_sites.bed"
@@ -91,8 +105,8 @@ rule map:
         bwa=config['mapper'],
         sort="none",
         dedup="none",
-        extra='-SP'
-    threads: 1
+        extra='-SP -T 20' # Lower minimal alignment score for bwa-mem to increase sensitivity for short reads and short alignments
+    threads: 6
     output:
         "../Data/Processed/bams/{sample}.bam",
     log:
@@ -101,6 +115,12 @@ rule map:
         "benchmarks/bwa_memx/{sample}.tsv"
     wrapper:
         "v3.3.3/bio/bwa-memx/mem"
+
+use rule map as map_one_sided with:
+    input:
+        reads="../Data/Processed/fastq/{sample}.R2.fastq.gz",
+        reference=refgen_path,
+        idx=idx
 
 # rule parse_sort_dedup:
 #     input:
@@ -129,7 +149,7 @@ rule parse:
     input:
         "../Data/Processed/bams/{sample}.bam",
     output:
-        pipe("../Data/Processed/pairs/{sample}_parsed.pairs.gz")
+        pairs="../Data/Processed/pairs/{sample}_parsed.pairs",
     conda:
         "envs/pairtools_env.yaml",
     log:
@@ -143,13 +163,62 @@ rule parse:
     shell:
         """
         pairtools parse -c {params.chrom_sizes_path} --drop-sam --no-flip \
-        --add-columns mapq,pos5,pos3 --report-alignment-end 5 -o {output} {input} \
+        --min-mapq 30 \
+        --walks-policy 5any \
+        --add-columns mapq,pos5,pos3 --report-alignment-end 5 \
+        --output {output.pairs} \
+        {input} \
+        >{log[0]} 2>&1
+        """
+
+rule stats:
+    input:
+        pairs="../Data/Processed/pairs/{sample}_parsed.pairs",
+    output:
+        stats="../Data/Processed/pairs/{sample}_stats.yml"
+    conda:
+        "envs/pairtools_env.yaml",
+    log:
+        "logs/stats/{sample}.log",
+    benchmark:
+        "benchmarks/stats/{sample}.tsv"
+    threads: 1
+    shell:
+        """
+        pairtools stats --yaml {input.pairs} -o {output.stats} \
+        >{log[0]} 2>&1
+        """
+
+rule parse2_one_side:
+    input:
+        "../Data/Processed/bams/{sample}.bam",
+    output:
+        pairs="../Data/Processed/pairs/{sample}_parsed.pairs",
+    conda:
+        "envs/pairtools_env.yaml",
+    log:
+        "logs/parse2_one_side/{sample}.log",
+    benchmark:
+        "benchmarks/parse2_one_side/{sample}.tsv"
+    threads: 1
+    params:
+        chrom_sizes_path=config['chrom_sizes_path'],
+        cassette_name=config['cassette_name'],
+    shell:
+        """
+        pairtools parse2 -c {params.chrom_sizes_path} --drop-sam --no-flip \
+        --min-mapq 30 \
+        --add-columns mapq,pos5,pos3 \
+        --single-end \
+        --report-position walk \
+        --output {output.pairs} \
+        {input} \
         >{log[0]} 2>&1
         """
 
 rule sort:
     input:
-        "../Data/Processed/pairs/{sample}_parsed.pairs.gz",
+        "../Data/Processed/pairs/{sample}_parsed.pairs",
     output:
         "../Data/Processed/pairs/{sample}_sorted.pairs"
     conda:
@@ -180,6 +249,38 @@ rule dedup:
     shell:
         """
         pairtools dedup --backend cython --max-mismatch 0 -o {output} {input} \
+        >{log[0]} 2>&1
+        """
+
+rule get_trans_pairs:
+    input:
+        lambda wildcards: "../Data/Processed/pairs/{sample}_nodups.pairs" if config.get('dedup', True) else "../Data/Processed/pairs/{sample}_sorted.pairs",
+    output:
+        "../Data/Processed/pairs/{sample}_{side}.pairs"
+    conda:
+        "envs/pairtools_env.yaml",
+    log:
+        "logs/get_trans_pairs/{sample}_{side}.log",
+    benchmark:
+        "benchmarks/get_trans_pairs/{sample}_{side}.tsv"
+    threads: 1
+    params:
+        selection_chrom = config['cassette_name'],
+        selection_start = lambda wildcards: config[f'{wildcards.side}_ITR_primer_position']-1,
+        selection_end = lambda wildcards: config[f'{wildcards.side}_ITR_primer_position']+1,
+        selection_3prime = lambda wildcards: cassette_length if wildcards.side == 'forward' else 1
+    shell:
+        """
+        pairtools select -t pos51 int -t pos31 int \
+                         '(pair_type.upper()=="UR" or \
+                           pair_type.upper()=="UU" or \
+                           pair_type.upper()=="RU") and \
+                          chrom1!=chrom2 and \
+                          chrom1=="{params.selection_chrom}" and \
+                          pos51>={params.selection_start} and \
+                          pos51<={params.selection_end} and \
+                          pos31=={params.selection_3prime}' \
+        -o {output} {input} \
         >{log[0]} 2>&1
         """
 
@@ -226,10 +327,12 @@ rule coverage:
     benchmark:
         "benchmarks/coverage/{sample}_{side}.tsv"
     threads: 1
+    params:
+        side=2 if config['use_junction_readthrough'] else 1
     shell:
         """
-        python3 {input.script} -i {input.pairs} -o {output.bg} -t {threads} \
-        --output-bigwig {output.bw} \
+        python3 {input.script} -i {input.pairs} --side {params.side} -o {output.bg} \
+        -t {threads} --output-bigwig {output.bw} \
         >{log[0]} 2>&1
         """
 
@@ -238,7 +341,7 @@ rule find_peaks:
         coverage="../Data/Processed/coverage/{sample}_{side}_coverage.bedgraph",
         script='workflow/scripts/find_peaks.py'
     output:
-        temp("../Data/Processed/peaks/{sample}_{side}.bed"),
+        "../Data/Processed/peaks/{sample}_{side}.bed"
     conda:
         "envs/peaks.yaml",
     log:
@@ -247,12 +350,15 @@ rule find_peaks:
         "benchmarks/find_peaks/{sample}_{side}.tsv"
     threads: 1
     params:
+        cluster_arg = lambda wildcards, input: "--no-cluster" if config['use_junction_readthrough'] else "--cluster",
+        auto_li_arg = lambda wildcards, input: "--auto-li" if config['use_junction_readthrough'] else "--no-auto-li",
         min_peak_width=config['min_peak_width'],
         min_peak_reads=config['min_peak_reads'],
         min_peak_frac=config['min_peak_frac']
     shell:
         """
         python3 {input.script} -i {input.coverage} -o {output} \
+        {params.cluster_arg} {params.auto_li_arg} \
         --min-peak-width {params.min_peak_width} --min-peak-frac {params.min_peak_frac} \
         --min-peak-reads {params.min_peak_reads} \
         >{log[0]} 2>&1
@@ -303,43 +409,42 @@ rule combine_all_peaks:
 
 rule find_insertion_sites:
     input:
-        peaks="../Data/Processed/peaks/{sample}_peaks.bed",
-        script='workflow/scripts/find_insertion_sites.py'
-    output:
-        "../Data/Processed/insertion_sites/{sample}.bed",
-    conda:
-        "envs/peaks.yaml",
-    log:
-        "logs/find_insertion_sites/{sample}.log",
-    benchmark:
-        "benchmarks/find_insertion_sites/{sample}.tsv"
-    threads: 1
-    params:
-        refgen_path=refgen_path,
-        insertion_seq=config['insertion_seq'],
-        sample=lambda wildcards: wildcards.sample,
-    shell:
-        """
-        python3 {input.script} --peaks {input.peaks} \
-        --genome {params.refgen_path} --insertion-seq {params.insertion_seq} \
-        --sample-name {params.sample} -o {output} \
-        >{log[0]} 2>&1
-        """
-
-rule combine_all_sites:
-    input:
-        sites=expand("../Data/Processed/insertion_sites/{sample}.bed",
-                            sample=sample_list)
+        peaks="../Data/Processed/peaks/all_peaks.bed",
+        script='workflow/scripts/find_insertion_sites.py' #lambda wildcards: 'workflow/scripts/find_insertion_sites_readthrough.py' if config['use_junction_readthrough'] else 'workflow/scripts/find_insertion_sites.py'
     output:
         "../Data/Processed/insertion_sites/all_sites.bed",
     conda:
         "envs/peaks.yaml",
     log:
-        "logs/combine_all_sites/log.log",
+        "logs/find_insertion_sites/all.log",
     benchmark:
-        "benchmarks/combine_all_sites/benchmark.tsv"
+        "benchmarks/find_insertion_sites/all.tsv"
     threads: 1
+    params:
+        refgen_path=refgen_path,
+        insertion_seq=config['insertion_seq']
     shell:
         """
-        cat {input.sites} | cut -f1,2,3,4,6,7 | sort -k4,4V -k1,1V -k2,2n -k3,3n -k5,5 > {output}
+        python3 {input.script} --peaks {input.peaks} \
+        --genome {params.refgen_path} --insertion-seq {params.insertion_seq} \
+        -o {output} \
+        >{log[0]} 2>&1
         """
+
+# rule combine_all_sites:
+#     input:
+#         sites=expand("../Data/Processed/insertion_sites/{sample}.bed",
+#                             sample=sample_list)
+#     output:
+#         "../Data/Processed/insertion_sites/all_sites.bed",
+#     conda:
+#         "envs/peaks.yaml",
+#     log:
+#         "logs/combine_all_sites/log.log",
+#     benchmark:
+#         "benchmarks/combine_all_sites/benchmark.tsv"
+#     threads: 1
+#     shell:
+#         """
+#         cat {input.sites} | cut -f1,2,3,4,6,7 | sort -k4,4V -k1,1V -k2,2n -k3,3n -k5,5 > {output}
+#         """

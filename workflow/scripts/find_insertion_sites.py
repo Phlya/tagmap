@@ -7,75 +7,84 @@ import argparse
 
 argparser = argparse.ArgumentParser()
 argparser.add_argument("--peaks", type=str)
-argparser.add_argument("--sample-name", type=str, default=".")
 argparser.add_argument("--genome", "-g", type=str)
 argparser.add_argument("--insertion-seq", type=str, default="TA")
 argparser.add_argument("--output", "-o", type=str)
 args = argparser.parse_args()
-
-peaks = pd.read_csv(
-    args.peaks,
-    sep="\t",
-    header=None,
-    names=["chrom", "start", "end", "sample_name", "count", "fraction", "side"],
-    dtype={
-        "chrom": str,
-        "start": int,
-        "end": int,
-        "count": int,
-        "fraction": float,
-        "side": str,
-        "sample_name": str,
-    },
+ins_seq = args.insertion_seq
+peaks = (
+    pd.read_csv(
+        args.peaks,
+        sep="\t",
+        header=None,
+        names=["chrom", "start", "end", "sample_name", "fraction", "side"],
+        dtype={
+            "chrom": str,
+            "start": int,
+            "end": int,
+            "fraction": float,
+            "side": str,
+            "sample_name": str,
+        },
+    )
+    .sort_values(["sample_name", "chrom", "start", "end"])
+    .reset_index(drop=True)
 )
 
-f = peaks[peaks["side"] == "+"]
-r = peaks[peaks["side"] == "-"]
-
-
-overlap = bioframe.overlap(
-    bioframe.expand(f, 500), bioframe.expand(r, 500), how="inner"
+peaks = bioframe.cluster(
+    peaks,
+    min_dist=5,
+    on=["sample_name"],
+    return_cluster_ids=True,
 )
-if len(overlap) == 0:
-    open(args.output, "w").close()
-    exit()
 
-overlap["count"] = overlap["count"] + overlap["count_"]
-overlap = overlap.drop(columns=["count_"])
 
-overlap["score"] = (overlap["fraction"] + overlap["fraction_"]) / 2 * 1000
-overlap = overlap.drop(columns=["fraction_"])
+def determine_direction(series):
+    if np.all(series.to_numpy() == np.asarray(["+", "-"])):
+        return "-"
+    elif np.all(series.to_numpy() == np.asarray(["-", "+"])):
+        return "+"
+    else:
+        return "."
 
-start = overlap[["start", "start_"]].max(axis=1)
-end = overlap[["end", "end_"]].min(axis=1)
 
-strand = np.where(start == overlap["start"], "+", "-")
-overlap = overlap.assign(start=start, end=end, strand=strand)
-overlap = overlap.drop(columns=["start_", "end_"])
-# overlap = bioframe.expand(overlap, -500)
+peaks["strand"] = peaks.groupby(["cluster"])["side"].transform(determine_direction)
+
+
+peaks["start"] = peaks["cluster_start"]
+peaks["end"] = peaks["cluster_end"]
+
+peaks = peaks[["chrom", "start", "end", "sample_name", "fraction", "strand"]]
+peaks = (
+    peaks.groupby(["chrom", "start", "end", "sample_name", "strand"])["fraction"]
+    .mean()
+    .reset_index()
+)
+peaks["score"] = (peaks["fraction"] * 1000).round().astype(int)
+peaks = peaks.drop_duplicates().reset_index(drop=True)
+peaks = bioframe.expand(peaks, len(args.insertion_seq))
 
 pinpointed = []
 for record in SeqIO.parse(args.genome, "fasta"):
-    overlaps = overlap[overlap["chrom"] == record.id]
-    if len(overlaps) == 0:
+    selected = peaks[peaks["chrom"] == record.id]
+    if len(peaks) == 0:
         continue
-    for i, row in overlaps.iterrows():
+    for i, row in selected.iterrows():
         seq = record.seq[row["start"] : row["end"]].upper()
         # Just finds the first TA
-        i = seq.find(args.insertion_seq)
+        i = seq.find(ins_seq)
         if i == -1:
-            row["pinpointed"] = False
+            row[f"{ins_seq}_found"] = False
         else:
-            row["pinpointed"] = True
+            row[f"{ins_seq}_found"] = True
             row["start"] = row["start"] + i
             row["end"] = row["start"] + 1
         pinpointed.append(row)
 pinpointed = pd.DataFrame(pinpointed)
-pinpointed["name"] = args.sample_name
 pinpointed = pinpointed[
-    ["chrom", "start", "end", "name", "score", "strand", "pinpointed"]
+    ["chrom", "start", "end", "sample_name", "score", "strand", f"{ins_seq}_found"]
 ]
 
-pinpointed.sort_values(["chrom", "start", "end"]).to_csv(
-    args.output, sep="\t", index=False, header=False
+pinpointed.sort_values(["sample_name", "chrom", "start", "end"]).to_csv(
+    args.output, sep="\t", index=False, header=True
 )

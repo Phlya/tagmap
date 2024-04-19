@@ -101,8 +101,8 @@ if __name__ == "__main__":
         exit()
 
     s = args.side
-    pairs["start"] = pairs[f"pos{s}"]  # + np.where(pairs[f"strand{s}"] == "+", -1, 1)
-    pairs["end"] = pairs[f"pos{s}"] + 1  # np.where(pairs[f"strand{s}"] == "+", 1, -1)
+    pairs["start"] = pairs[f"pos{s}"] - 1
+    pairs["end"] = pairs[f"pos{s}"]
     pairs[["start", "end"]] = np.sort(pairs[["start", "end"]], axis=1)
     pairs["chrom"] = pairs[f"chrom{s}"]
 
@@ -118,7 +118,6 @@ if __name__ == "__main__":
     ).reset_index(drop=True)[["chrom", "start", "end", "count"]]
     coverage_df = coverage_df[coverage_df["count"] > 0]
     coverage_df["fraction"] = coverage_df["count"] / coverage_df["count"].sum()
-    coverage_df["end"] -= 1
     coverage_df.to_csv(args.output, sep="\t", index=False, header=False)
 
     if args.output_bigwig is not None:

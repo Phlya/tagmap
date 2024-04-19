@@ -3,8 +3,8 @@ import bioframe
 import argparse
 
 argparser = argparse.ArgumentParser()
-argparser.add_argument("--rev", type=str)
 argparser.add_argument("--fwd", type=str)
+argparser.add_argument("--rev", type=str)
 argparser.add_argument("--blacklist", type=str, default=None)
 argparser.add_argument("--sample-name", type=str)
 argparser.add_argument("--output", "-o", type=str)
