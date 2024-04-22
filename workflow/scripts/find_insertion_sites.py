@@ -40,6 +40,8 @@ peaks = bioframe.cluster(
 
 
 def determine_direction(series):
+    if series.shape[0] != 2:
+        return "."
     if np.all(series.to_numpy() == np.asarray(["+", "-"])):
         return "-"
     elif np.all(series.to_numpy() == np.asarray(["-", "+"])):

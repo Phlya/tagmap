@@ -2,7 +2,7 @@ import os
 import numpy as np
 import pandas as pd
 
-localrules: all, combine_all_peaks, combine_all_sites, combine_peaks
+localrules: all, combine_all_peaks, combine_peaks
 
 refgen_path = config["refgen_path"]
 
@@ -55,13 +55,13 @@ wildcard_constraints:
     sample=f"({'|'.join([re.escape(sample) for sample in sample_list])})",
     side=('forward|reverse')
 
-if config['use_junction_readthrough']:
-    ruleorder: map_one_sided > map
-    ruleorder: parse2_one_side > parse
+if config['use_only_read_junctions']:
+    # ruleorder: bwamap_one_sided > bwamap
+    ruleorder: parse2 > parse
     ruleorder: get_trans_pairs > get_side_pairs
 else:
-    ruleorder: map > map_one_sided
-    ruleorder: parse > parse2_one_side
+    # ruleorder: bwamap > bwamap_one_sided
+    ruleorder: parse > parse2
     ruleorder: get_side_pairs > get_trans_pairs
 
 rule all:
@@ -69,21 +69,23 @@ rule all:
         expand("../Data/Processed/pairs/{sample}_stats.yml",
         sample=sample_list),
         "../Data/Processed/peaks/all_peaks.bed",
-        "../Data/Processed/insertion_sites/all_sites.bed"
+        "../Data/Processed/insertion_sites/all_sites.bed",
+        expand("../Data/Processed/coverage/{sample}_{side}_coverage_for_ucsc.bedgraph",
+        sample=sample_list, side=['forward', 'reverse']),
         
 rule bwaindex:
     input:
-        genome=refgen_path,
+        refgen_path,
     output:
-        idx=idx,
+        idx,
     params:
         bwa=config['mapper'],
+    priority: 100
     threads: 8  #Only affects bwa-meme
     log:
-        f"logs/bwa-memx_index/{os.path.basename(refgen_path).rstrip('.fasta')}.log",
-    cache: True
+        f"logs/bwa-memx_index/{os.path.basename(refgen_path).rstrip('.fasta').rstrip('.fa')}.log",
     wrapper:
-        "v3.3.3/bio/bwa-memx/index"
+        "v3.8.0/bio/bwa-memx/index"
 
 rule merge_fastq:
     input:
@@ -95,7 +97,7 @@ rule merge_fastq:
         cat {input} > {output}
         """
 
-rule map:
+rule bwamap:
     input:
         reads=lambda wildcards: [f"../Data/Processed/fastq/{wildcards.sample}.R1.fastq.gz",
                                  f"../Data/Processed/fastq/{wildcards.sample}.R2.fastq.gz"],
@@ -116,11 +118,6 @@ rule map:
     wrapper:
         "v3.3.3/bio/bwa-memx/mem"
 
-use rule map as map_one_sided with:
-    input:
-        reads="../Data/Processed/fastq/{sample}.R2.fastq.gz",
-        reference=refgen_path,
-        idx=idx
 
 # rule parse_sort_dedup:
 #     input:
@@ -147,7 +144,8 @@ use rule map as map_one_sided with:
 
 rule parse:
     input:
-        "../Data/Processed/bams/{sample}.bam",
+        bam="../Data/Processed/bams/{sample}.bam",
+        chromsizes=config['chrom_sizes_path']
     output:
         pairs="../Data/Processed/pairs/{sample}_parsed.pairs",
     conda:
@@ -162,12 +160,39 @@ rule parse:
         cassette_name=config['cassette_name'],
     shell:
         """
-        pairtools parse -c {params.chrom_sizes_path} --drop-sam --no-flip \
+        pairtools parse -c {input.chromsizes} --drop-sam --no-flip \
         --min-mapq 30 \
-        --walks-policy 5any \
+        --walks-policy all \
         --add-columns mapq,pos5,pos3 --report-alignment-end 5 \
         --output {output.pairs} \
-        {input} \
+        {input.bam} \
+        >{log[0]} 2>&1
+        """
+
+rule parse2:
+    input:
+        bam="../Data/Processed/bams/{sample}.bam",
+        chromsizes=config['chrom_sizes_path']
+    output:
+        pairs="../Data/Processed/pairs/{sample}_parsed.pairs",
+    conda:
+        "envs/pairtools_env.yaml",
+    log:
+        "logs/parse2/{sample}.log",
+    benchmark:
+        "benchmarks/parse2/{sample}.tsv"
+    threads: 1
+    params:
+        cassette_name=config['cassette_name'],
+    shell:
+        """
+        pairtools parse2 -c {input.chromsizes} --drop-sam --flip \
+        --min-mapq 30 \
+        --add-columns mapq,pos5,pos3 \
+        --add-pair-index \
+        --report-position walk \
+        --output {output.pairs} \
+        {input.bam} \
         >{log[0]} 2>&1
         """
 
@@ -186,33 +211,6 @@ rule stats:
     shell:
         """
         pairtools stats --yaml {input.pairs} -o {output.stats} \
-        >{log[0]} 2>&1
-        """
-
-rule parse2_one_side:
-    input:
-        "../Data/Processed/bams/{sample}.bam",
-    output:
-        pairs="../Data/Processed/pairs/{sample}_parsed.pairs",
-    conda:
-        "envs/pairtools_env.yaml",
-    log:
-        "logs/parse2_one_side/{sample}.log",
-    benchmark:
-        "benchmarks/parse2_one_side/{sample}.tsv"
-    threads: 1
-    params:
-        chrom_sizes_path=config['chrom_sizes_path'],
-        cassette_name=config['cassette_name'],
-    shell:
-        """
-        pairtools parse2 -c {params.chrom_sizes_path} --drop-sam --no-flip \
-        --min-mapq 30 \
-        --add-columns mapq,pos5,pos3 \
-        --single-end \
-        --report-position walk \
-        --output {output.pairs} \
-        {input} \
         >{log[0]} 2>&1
         """
 
@@ -266,20 +264,26 @@ rule get_trans_pairs:
     threads: 1
     params:
         selection_chrom = config['cassette_name'],
-        selection_start = lambda wildcards: config[f'{wildcards.side}_ITR_primer_position']-1,
-        selection_end = lambda wildcards: config[f'{wildcards.side}_ITR_primer_position']+1,
+        # selection_start = lambda wildcards: config[f'{wildcards.side}_ITR_primer_position'] if wildcards.side == 'forward' else 0,
+        # selection_end = lambda wildcards: config[f'{wildcards.side}_ITR_primer_position']+1,
         selection_3prime = lambda wildcards: cassette_length if wildcards.side == 'forward' else 1
     shell:
         """
-        pairtools select -t pos51 int -t pos31 int \
+        pairtools select -t pos51 int -t pos31 int -t pos52 int -t pos32 int \
                          '(pair_type.upper()=="UR" or \
                            pair_type.upper()=="UU" or \
                            pair_type.upper()=="RU") and \
                           chrom1!=chrom2 and \
-                          chrom1=="{params.selection_chrom}" and \
-                          pos51>={params.selection_start} and \
-                          pos51<={params.selection_end} and \
-                          pos31=={params.selection_3prime}' \
+                          walk_pair_type.isin(["R1", "R2", "R1&2"]) and \
+                            ( \
+                                (chrom1=="{params.selection_chrom}" and \
+                                pos31=={params.selection_3prime}) \
+
+                                or \
+
+                                (chrom2=="{params.selection_chrom}" and \
+                                 pos32=={params.selection_3prime}) \
+                            )' \
         -o {output} {input} \
         >{log[0]} 2>&1
         """
@@ -328,12 +332,31 @@ rule coverage:
         "benchmarks/coverage/{sample}_{side}.tsv"
     threads: 1
     params:
-        side=2 if config['use_junction_readthrough'] else 1
+        side=2 if config['use_only_read_junctions'] else 1
     shell:
         """
         python3 {input.script} -i {input.pairs} --side {params.side} -o {output.bg} \
         -t {threads} --output-bigwig {output.bw} \
         >{log[0]} 2>&1
+        """
+
+
+rule for_ucsc:
+    input:
+        bg="../Data/Processed/coverage/{sample}_{side}_coverage.bedgraph",
+        script='workflow/scripts/for_ucsc.py'
+    output:
+        bg="../Data/Processed/coverage/{sample}_{side}_coverage_for_ucsc.bedgraph",
+        bw="../Data/Processed/coverage/{sample}_{side}_coverage_for_ucsc.bw",
+    conda:
+        "envs/pairtools_env.yaml",
+    params:
+        chromsizes=config['chrom_sizes_path_no_cassette'],
+        name=lambda wildcards: f"{wildcards.sample}_{wildcards.side}"
+    shell:
+        """
+        python3 {input.script} -i {input.bg} --chromsizes {params.chromsizes} \
+        --name {params.name} -o {output.bg} --output-bigwig {output.bw}
         """
 
 rule find_peaks:
@@ -350,8 +373,8 @@ rule find_peaks:
         "benchmarks/find_peaks/{sample}_{side}.tsv"
     threads: 1
     params:
-        cluster_arg = lambda wildcards, input: "--no-cluster" if config['use_junction_readthrough'] else "--cluster",
-        auto_li_arg = lambda wildcards, input: "--auto-li" if config['use_junction_readthrough'] else "--no-auto-li",
+        cluster_arg = lambda wildcards, input: "--no-cluster" if config['use_only_read_junctions'] else "--cluster",
+        auto_li_arg = lambda wildcards, input: "--auto-li" if config['use_only_read_junctions'] else "--no-auto-li",
         min_peak_width=config['min_peak_width'],
         min_peak_reads=config['min_peak_reads'],
         min_peak_frac=config['min_peak_frac']
@@ -430,21 +453,3 @@ rule find_insertion_sites:
         -o {output} \
         >{log[0]} 2>&1
         """
-
-# rule combine_all_sites:
-#     input:
-#         sites=expand("../Data/Processed/insertion_sites/{sample}.bed",
-#                             sample=sample_list)
-#     output:
-#         "../Data/Processed/insertion_sites/all_sites.bed",
-#     conda:
-#         "envs/peaks.yaml",
-#     log:
-#         "logs/combine_all_sites/log.log",
-#     benchmark:
-#         "benchmarks/combine_all_sites/benchmark.tsv"
-#     threads: 1
-#     shell:
-#         """
-#         cat {input.sites} | cut -f1,2,3,4,6,7 | sort -k4,4V -k1,1V -k2,2n -k3,3n -k5,5 > {output}
-#         """

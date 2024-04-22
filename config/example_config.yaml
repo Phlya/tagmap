@@ -4,6 +4,9 @@
 samples_path: 'config/samples.tsv'
 refgen_path: '../../../mm10_custom.fa'
 chrom_sizes_path: '../../../mobilization_mapping/mm10_custom_chromsizes.txt'
+
+# Chromsizes with just the original genome, without the cassette, to use for UCSC visualization
+chrom_sizes_path_no_cassette: '../../../genomes/mm10/chromsizes.txt'
 # Path to the blacklist file: any peak overlapping this file will be removed
 # Simply delete this line if you don't have a blacklist
 blacklist: 'resources/blacklist_mm10_PB.bed'
