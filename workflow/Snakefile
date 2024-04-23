@@ -1,4 +1,4 @@
-import os
+from os.path import normpath
 import numpy as np
 import pandas as pd
 
@@ -6,12 +6,17 @@ configfile: "config/example_config.yaml"
 
 localrules: all, combine_all_peaks, combine_peaks
 
-refgen_path = config["refgen_path"]
+refgen_path = normpath(config["refgen_path"])
 
 chromsizes = pd.read_table(config["chrom_sizes_path"], header=None, sep='\t', index_col=0, names=['chrom', 'size'])
 cassette_length = chromsizes.loc[config['cassette_name']]['size']
 
-output_dir = config["output_dir"]
+fastq_folder = normpath(config["fastq_folder"])
+bams_folder = normpath(config["bams_folder"])
+pairs_folder = normpath(config["pairs_folder"])
+coverage_folder = normpath(config["coverage_folder"])
+peaks_folder = normpath(config["peaks_folder"])
+insertion_sites_folder = normpath(config["insertion_sites_folder"])
 
 # Depending on the mapper, the index files will be different
 if config["mapper"] == "bwa-mem":
@@ -69,13 +74,12 @@ wildcard_constraints:
 
 rule all:
     input:
-        expand(os.path.join(output_dir, "pairs/{sample}_stats.yml"),
-        sample=sample_list),
-        expand(os.path.join(output_dir, "pairs/{sample}_{side}_stats.yml"),
+        expand(f"{pairs_folder}/{{sample}}_stats.yml", sample=sample_list),
+        expand(f"{pairs_folder}/{{sample}}_{{side}}_stats.yml",
         sample=sample_list, side=['forward', 'reverse']),
-        os.path.join(output_dir, "peaks/all_peaks.bed"),
-        os.path.join(output_dir, "insertion_sites/all_sites.bed"),
-        expand(os.path.join(output_dir, "coverage/{sample}_{side}_coverage_for_ucsc.bedgraph"),
+        f"{peaks_folder}/all_peaks.bed",
+        f"{insertion_sites_folder}/all_sites.bed",
+        expand(f"{coverage_folder}/{{sample}}_{{side}}_coverage_for_ucsc.bedgraph",
         sample=sample_list, side=['forward', 'reverse']),
         
 rule bwaindex:
@@ -96,7 +100,7 @@ rule merge_fastq:
     input:
         lambda wildcards: samples[samples['name']==wildcards.sample][f'fastq{wildcards.read}'],
     output:
-        pipe(os.path.join(output_dir, "fastq/{sample}.{read}.fastq.gz")),
+        pipe(f"{fastq_folder}/{{sample}}.{{read}}.fastq.gz"),
     shell:
         """
         cat {input} > {output}
@@ -104,8 +108,8 @@ rule merge_fastq:
 
 rule bwamap:
     input:
-        reads=lambda wildcards: [os.path.join(output_dir, "fastq/{wildcards.sample}.R1.fastq.gz"),
-                                 os.path.join(output_dir, "fastq/{wildcards.sample}.R2.fastq.gz")],
+        reads=lambda wildcards: [f"{fastq_folder}/{{wildcards.sample}}.R1.fastq.gz",
+                                 f"{fastq_folder}/{{wildcards.sample}}.R2.fastq.gz"],
         reference=refgen_path,
         idx=idx,
     params:
@@ -115,11 +119,11 @@ rule bwamap:
         extra='-SP -T 20' # Lower minimal alignment score for bwa-mem to increase sensitivity for short reads and short alignments
     threads: 6
     output:
-        os.path.join(output_dir, "bams/{sample}.bam"),
+        f"{bams_folder}/{{sample}}.bam",
     log:
-        "logs/bwa_memx/{sample}.log",
+        "logs/bwa_memx/{{sample}}.log",
     benchmark:
-        "benchmarks/bwa_memx/{sample}.tsv"
+        "benchmarks/bwa_memx/{{sample}}.tsv"
     wrapper:
         "v3.3.3/bio/bwa-memx/mem"
 
@@ -170,10 +174,10 @@ rule bwamap:
 
 rule parse2:
     input:
-        bam=os.path.join(output_dir, "bams/{sample}.bam"),
+        bam=f"{bams_folder}/{{sample}}.bam",
         chromsizes=config['chrom_sizes_path']
     output:
-        pairs=pipe(os.path.join(output_dir, "pairs/{sample}_parsed.pairs")),
+        pairs=pipe(f"{pairs_folder}/{{sample}}_parsed.pairs"),
     conda:
         "envs/pairtools_env.yaml",
     log:
@@ -196,15 +200,15 @@ rule parse2:
 
 rule sort:
     input:
-        os.path.join(output_dir, "pairs/{sample}_parsed.pairs"),
+        f"{pairs_folder}/{{sample}}_parsed.pairs",
     output:
-        os.path.join(output_dir, "pairs/{sample}_sorted.pairs")
+        f"{pairs_folder}/{{sample}}_sorted.pairs"
     conda:
         "envs/pairtools_env.yaml",
     log:
-        "logs/sort/{sample}.log",
+        "logs/sort/{{sample}}.log",
     benchmark:
-        "benchmarks/sort/{sample}.tsv"
+        "benchmarks/sort/{{sample}}.tsv"
     threads: 6
     shell:
         """
@@ -214,15 +218,15 @@ rule sort:
 
 rule stats:
     input:
-        pairs=os.path.join(output_dir, "pairs/{sample}_sorted.pairs"),
+        pairs=f"{pairs_folder}/{{sample}}_sorted.pairs",
     output:
-        stats=os.path.join(output_dir, "pairs/{sample}_stats.yml")
+        stats=f"{pairs_folder}/{{sample}}_stats.yml"
     conda:
         "envs/pairtools_env.yaml",
     log:
-        "logs/stats/{sample}.log",
+        "logs/stats/{{sample}}.log",
     benchmark:
-        "benchmarks/stats/{sample}.tsv"
+        "benchmarks/stats/{{sample}}.tsv"
     threads: 1
     shell:
         """
@@ -232,9 +236,9 @@ rule stats:
 
 rule dedup:
     input:
-        os.path.join(output_dir, "pairs/{sample}_sorted.pairs"),
+        f"{pairs_folder}/{{sample}}_sorted.pairs",
     output:
-        os.path.join(output_dir, "pairs/{sample}_nodups.pairs")
+        f"{pairs_folder}/{{sample}}_nodups.pairs"
     conda:
         "envs/pairtools_env.yaml",
     log:
@@ -248,14 +252,14 @@ rule dedup:
         >{log[0]} 2>&1
         """
 
-selection_3prime = lambda wildcards: "abs(pos32-min({cassette_length}, {config['forward_ITR_primer_position']}+read_len1)<=2)" if wildcards.side == 'forward' else "abs(pos32-max(0, {config['reverse_ITR_primer_position']}-read_len2)<=2)"
-selection_3prime_readthrough = lambda wildcards: "{cassette_length}" if wildcards.side == 'forward' else "0"
+selection_3prime = lambda wildcards: f"abs(pos32-min({config['cassette_length']}, {config['forward_ITR_primer_position']}+read_len1)<=2)" if wildcards.side == 'forward' else f"abs(pos32-max(0, {config['reverse_ITR_primer_position']}-read_len2)<=2)"
+selection_3prime_readthrough = lambda wildcards: f"{config['cassette_length']}" if wildcards.side == 'forward' else "0"
 
 rule get_trans_side_pairs:
     input:
-        lambda wildcards: os.path.join(output_dir, "pairs/{sample}_nodups.pairs") if config.get('dedup', True) else os.path.join(output_dir, "pairs/{sample}_sorted.pairs")
+        lambda wildcards: f"{pairs_folder}/{{sample}}_nodups.pairs" if config.get('dedup', True) else f"{pairs_folder}/{{sample}}_sorted.pairs"
     output:
-        os.path.join(output_dir, "pairs/{sample}_{side}.pairs")
+        f"{pairs_folder}/{{sample}}_{{side}}.pairs"
     conda:
         "envs/pairtools_env.yaml",
     log:
@@ -284,13 +288,13 @@ rule get_trans_side_pairs:
 
 use rule stats as stats_side with:
     input:
-        pairs=os.path.join(output_dir, "pairs/{sample}_{side}.pairs"),
+        pairs=f"{pairs_folder}/{{sample}}_{{side}}.pairs",
     log:
-        "logs/stats/{sample}_{side}.log",
+        "logs/stats/{{sample}}_{{side}}.log",
     benchmark:
-        "benchmarks/stats/{sample}_{side}.tsv"
+        "benchmarks/stats/{{sample}}_{{side}}.tsv"
     output:
-        stats=os.path.join(output_dir, "pairs/{sample}_{side}_stats.yml")
+        stats=f"{pairs_folder}/{{sample}}_{{side}}_stats.yml"
 
 # rule get_readthrough_trans_pairs:
 #     input:
@@ -361,11 +365,11 @@ use rule stats as stats_side with:
 
 rule coverage:
     input:
-        pairs=os.path.join(output_dir, "pairs/{sample}_{side}.pairs"),
+        pairs=f"{pairs_folder}/{{sample}}_{{side}}.pairs",
         script='workflow/scripts/coverage.py'
     output:
-        bg=os.path.join(output_dir, "coverage/{sample}_{side}_coverage.bedgraph"),
-        bw=os.path.join(output_dir, "coverage/{sample}_{side}_coverage.bw"),
+        bg=f"{coverage_folder}/{{sample}}_{{side}}_coverage.bedgraph",
+        bw=f"{coverage_folder}/{{sample}}_{{side}}_coverage.bw",
     conda:
         "envs/pairtools_env.yaml",
     log:
@@ -385,11 +389,11 @@ rule coverage:
 
 rule for_ucsc:
     input:
-        bg=os.path.join(output_dir, "coverage/{sample}_{side}_coverage.bedgraph"),
+        bg=f"{coverage_folder}/{{sample}}_{{side}}_coverage.bedgraph",
         script='workflow/scripts/for_ucsc.py'
     output:
-        bg=os.path.join(output_dir, "coverage/{sample}_{side}_coverage_for_ucsc.bedgraph"),
-        bw=os.path.join(output_dir, "coverage/{sample}_{side}_coverage_for_ucsc.bw"),
+        bg=f"{coverage_folder}/{{sample}}_{{side}}_coverage_for_ucsc.bedgraph",
+        bw=f"{coverage_folder}/{{sample}}_{{side}}_coverage_for_ucsc.bw",
     conda:
         "envs/pairtools_env.yaml",
     params:
@@ -403,10 +407,10 @@ rule for_ucsc:
 
 rule find_peaks:
     input:
-        coverage=os.path.join(output_dir, "coverage/{sample}_{side}_coverage.bedgraph"),
+        coverage=f"{coverage_folder}/{{sample}}_{{side}}_coverage.bedgraph",
         script='workflow/scripts/find_peaks.py'
     output:
-        os.path.join(output_dir, "peaks/{sample}_{side}.bed")
+        f"{peaks_folder}/{{sample}}_{{side}}.bed"
     conda:
         "envs/peaks.yaml",
     log:
@@ -436,12 +440,12 @@ rule find_peaks:
 
 rule combine_peaks:
     input:
-        peaks_fwd=os.path.join(output_dir, "peaks/{sample}_forward.bed"),
-        peaks_rev=os.path.join(output_dir, "peaks/{sample}_reverse.bed"),
+        peaks_fwd=f"{peaks_folder}/{{sample}}_forward.bed",
+        peaks_rev=f"{peaks_folder}/{{sample}}_reverse.bed",
         blacklist=config.get('blacklist', []),
         script='workflow/scripts/combine_peaks.py'
     output:
-        os.path.join(output_dir, "peaks/{sample}_peaks.bed"),
+        f"{peaks_folder}/{{sample}}_peaks.bed",
     conda:
         "envs/peaks.yaml",
     log:
@@ -461,10 +465,9 @@ rule combine_peaks:
 
 rule combine_all_peaks:
     input:
-        peaks=expand(os.path.join(output_dir, "peaks/{sample}_peaks.bed"),
-                            sample=sample_list)
+        peaks=expand(f"{peaks_folder}/{{sample}}_peaks.bed", sample=sample_list)
     output:
-        os.path.join(output_dir, "peaks/all_peaks.bed"),
+        f"{peaks_folder}/all_peaks.bed",
     conda:
         "envs/peaks.yaml",
     log:
@@ -479,10 +482,10 @@ rule combine_all_peaks:
 
 rule find_insertion_sites:
     input:
-        peaks=os.path.join(output_dir, "peaks/all_peaks.bed"),
+        peaks=f"{peaks_folder}/all_peaks.bed",
         script='workflow/scripts/find_insertion_sites.py' #lambda wildcards: 'workflow/scripts/find_insertion_sites_readthrough.py' if config['use_junction_readthrough'] else 'workflow/scripts/find_insertion_sites.py'
     output:
-        os.path.join(output_dir, "insertion_sites/all_sites.bed"),
+        f"{insertion_sites_folder}/all_sites.bed",
     conda:
         "envs/peaks.yaml",
     log:
