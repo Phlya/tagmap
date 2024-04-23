@@ -248,6 +248,9 @@ rule dedup:
         >{log[0]} 2>&1
         """
 
+selection_3prime = lambda wildcards: "abs(pos32-min({cassette_length}, {config['forward_ITR_primer_position']}+read_len1)<=2)" if wildcards.side == 'forward' else "abs(pos32-max(0, {config['reverse_ITR_primer_position']}-read_len2)<=2)"
+selection_3prime_readthrough = lambda wildcards: "{cassette_length}" if wildcards.side == 'forward' else "0"
+
 rule get_trans_side_pairs:
     input:
         lambda wildcards: os.path.join(output_dir, "pairs/{sample}_nodups.pairs") if config.get('dedup', True) else os.path.join(output_dir, "pairs/{sample}_sorted.pairs")
@@ -263,7 +266,7 @@ rule get_trans_side_pairs:
     params:
         selection_chrom = config['cassette_name'],
         walk_pair_type_arg = 'walk_pair_type.isin(["R1", "R2", "R1&2"]) and' if config['use_only_read_junctions'] else '',
-        selection_3prime = lambda wildcards: "min({cassette_length}, {config['forward_ITR_primer_position']}+read_len1)" if wildcards.side == 'forward' else "max(0, {config['reverse_ITR_primer_position']}-read_len2)"
+        selection_3prime = selection_3prime_readthrough if config['use_only_read_junctions'] else selection_3prime
     shell:
         """
         pairtools select -t pos51 int -t pos31 int -t pos52 int -t pos32 int \
@@ -274,7 +277,7 @@ rule get_trans_side_pairs:
                            chrom1!=chrom2 and \
                            {params.walk_pair_type_arg} \
                           (chrom2=="{params.selection_chrom}" and \
-                            abs(pos32-{params.selection_3prime})<=2)' \
+                            {params.selection_3prime}' \
                         -o {output} {input} \
         >{log[0]} 2>&1
         """
