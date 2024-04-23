@@ -18,6 +18,8 @@ argparser.add_argument("--cluster", action=argparse.BooleanOptionalAction, defau
 argparser.add_argument("--min-peak-reads", type=int, default=10)
 argparser.add_argument("--min-peak-frac", type=float, default=0.01)
 argparser.add_argument("--min-peak-width", type=int, default=50)
+argparser.add_argument("--min-peak-dist", type=int, default=1000)
+argparser.add_argument("--ignore-chrom", type=str, default=None)
 argparser.add_argument("--output", "-o", type=str)
 args = argparser.parse_args()
 
@@ -36,9 +38,13 @@ coverage = pd.read_csv(
 if coverage.shape[0] == 0:
     Path(args.output).touch()
     exit()
+
+if args.ignore_chrom:
+    coverage = coverage[coverage["chrom"] != args.ignore_chrom]
+
 if args.cluster:
     merged = (
-        bioframe.cluster(coverage, min_dist=args.min_peak_width * 10)
+        bioframe.cluster(coverage, min_dist=args.min_peak_dist)
         .groupby("cluster")
         .agg({"chrom": lambda x: x.iloc[0], "start": "min", "end": "max"})
     )

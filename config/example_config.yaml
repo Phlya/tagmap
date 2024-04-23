@@ -28,4 +28,6 @@ use_junction_readthrough: False
 min_peak_width: 200
 min_peak_reads: 10
 min_peak_frac: 0.01
+min_peak_dist: 1000
 
+output_dir: '../Data/Processed/'
