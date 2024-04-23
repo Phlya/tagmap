@@ -109,8 +109,8 @@ rule merge_fastq:
 
 rule bwamap:
     input:
-        reads=lambda wildcards: [f"{fastq_folder}/{{wildcards.sample}}.R1.fastq.gz",
-                                 f"{fastq_folder}/{{wildcards.sample}}.R2.fastq.gz"],
+        reads=[f"{fastq_folder}/{{sample}}.R1.fastq.gz",
+               f"{fastq_folder}/{{sample}}.R2.fastq.gz"],
         reference=refgen_path,
         idx=idx,
     output:
@@ -254,8 +254,8 @@ rule dedup:
         >{log[0]} 2>&1
         """
 
-selection_3prime = lambda wildcards: f"abs(pos32-min({config['cassette_length']}, {config['forward_ITR_primer_position']}+read_len1)<=2)" if wildcards.side == 'forward' else f"abs(pos32-max(0, {config['reverse_ITR_primer_position']}-read_len2)<=2)"
-selection_3prime_readthrough = lambda wildcards: f"{config['cassette_length']}" if wildcards.side == 'forward' else "0"
+selection_3prime = lambda wildcards: f"abs(pos32-min({cassette_length}, {config['forward_ITR_primer_position']}+read_len1)<=2)" if wildcards.side == 'forward' else f"abs(pos32-max(0, {config['reverse_ITR_primer_position']}-read_len2)<=2)"
+selection_3prime_readthrough = lambda wildcards: f"{cassette_length}" if wildcards.side == 'forward' else "0"
 
 rule get_trans_side_pairs:
     input:
