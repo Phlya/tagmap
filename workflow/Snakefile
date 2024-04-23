@@ -428,7 +428,8 @@ rule find_peaks:
         python3 {input.script} -i {input.coverage} -o {output} \
         {params.cluster_arg} {params.auto_li_arg} \
         --min-peak-width {params.min_peak_width} --min-peak-frac {params.min_peak_frac} \
-        --min-peak-reads {params.min_peak_reads} --ignore-chrom {params.cassette_name} \
+        --min-peak-reads {params.min_peak_reads} --min-peak-dist {params.min_opeak_dist} \
+        --ignore-chrom {params.cassette_name} \
         {params.ignore_chrom_arg} \
         >{log[0]} 2>&1
         """
