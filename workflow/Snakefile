@@ -1,6 +1,7 @@
 from os.path import normpath
 import numpy as np
 import pandas as pd
+import re
 
 configfile: "config/example_config.yaml"
 
@@ -60,7 +61,7 @@ samples = pd.read_table(config["samples_path"], comment='#')
 sample_list = np.unique(samples['name'].to_numpy())
 
 wildcard_constraints:
-    sample="({'|'.join([re.escape(sample) for sample in sample_list])})",
+    sample=f"({'|'.join([re.escape(sample) for sample in sample_list])})",
     side=('forward|reverse'),
 
 # if config['use_only_read_junctions']:
@@ -112,14 +113,15 @@ rule bwamap:
                                  f"{fastq_folder}/{{wildcards.sample}}.R2.fastq.gz"],
         reference=refgen_path,
         idx=idx,
+    output:
+        f"{bams_folder}/{{sample}}.bam",
     params:
         bwa=config['mapper'],
         sort="none",
         dedup="none",
         extra='-SP -T 20' # Lower minimal alignment score for bwa-mem to increase sensitivity for short reads and short alignments
     threads: 6
-    output:
-        f"{bams_folder}/{{sample}}.bam",
+
     log:
         "logs/bwa_memx/{{sample}}.log",
     benchmark:
