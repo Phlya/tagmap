@@ -194,6 +194,9 @@ rule bwamap:
         reads=[
             f"{fastq_folder}/{{sample}}_trimmed.R1.fastq.gz",
             f"{fastq_folder}/{{sample}}_trimmed.R2.fastq.gz",
+        ] if config['trim'] else [
+            f"{fastq_folder}/{{sample}}.R1.fastq.gz",
+            f"{fastq_folder}/{{sample}}.R2.fastq.gz",
         ],
         reference=refgen_path,
         idx=idx,
@@ -212,50 +215,6 @@ rule bwamap:
     wrapper:
         "v3.3.3/bio/bwa-memx/mem"
 
-
-# rule parse_sort_dedup:
-#     input:
-#         os.path.join(output_dir, "bams/{sample}.bam",
-#     output:
-#         os.path.join(output_dir, "pairs/{sample}.pairs.gz"
-#     conda:
-#         "envs/pairtools_env.yaml",
-#     log:
-#         "logs/parse/{sample}.log",
-#     benchmark:
-#         "benchmarks/parse/{sample}.tsv"
-#     threads: 16
-#     shell:
-#         """
-#         pairtools parse -c {params.chrom_sizes_path} --drop-seq --drop-sam --no-flip \
-#         --add-columns mapq,pos5,pos3 --report-alignment-end 5 {input} \
-#         | pairtools sort --nproc {threads} \
-#         | pairtools dedup --backend cython --max-mismatch 0 -o {output}
-#         """
-
-# rule parse:
-#     input:
-#         bam=os.path.join(output_dir, "bams/{sample}.bam",
-#         chromsizes=config['chrom_sizes_path']
-#     output:
-#         pairs=os.path.join(output_dir, "pairs/{sample}_parsed.pairs",
-#     conda:
-#         "envs/pairtools_env.yaml",
-#     log:
-#         "logs/parse/{sample}.log",
-#     benchmark:
-#         "benchmarks/parse/{sample}.tsv"
-#     threads: 1
-#     shell:
-#         """
-#         pairtools parse -c {input.chromsizes} --drop-sam --no-flip \
-#         --min-mapq 30 \
-#         --walks-policy all \
-#         --add-columns mapq,pos5,pos3,read_len --report-alignment-end 5 \
-#         --output {output.pairs} \
-#         {input.bam} \
-#         >{log[0]} 2>&1
-#         """
 
 rule parse2:
     input:
