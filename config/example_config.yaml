@@ -23,7 +23,8 @@ reverse_primer_sequence: 'CGTCAATTTTACGCAGACTATC'
 # 5' overhang of the primers above, likely Nextera N7 sequence
 primer_overhang: 'GTCTCGTGGGCTCGGAGATGTGTATAAGAGACAG'
 # Sequence of the adapters loaded onto Tn5 transposase, likely Nextera N5 sequence
-adapter_seq: 'TCGTCGGCAGCGTCAGATGTGTATAAGAGACAG'
+# Not used at the moment
+# adapter_seq: 'TCGTCGGCAGCGTCAGATGTGTATAAGAGACAG'
 
 insertion_seq: "TTAA"
 
