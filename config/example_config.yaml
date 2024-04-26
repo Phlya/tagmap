@@ -16,10 +16,15 @@ mapper: 'bwa-mem2'
 dedup: True
 
 cassette_name: 'mobilized_enhancer'
-# Coordinate of the 5' of the PCR1 primer
-# alignments with 5' end +- 10 bp of this coordinate will be kept
-reverse_ITR_primer_position: 33
-forward_ITR_primer_position: 6001
+# Sequence of the primers used to amplify the cassette
+# If multiple PCRs were used, use the sequence of the primers used in the last step
+forward_primer_sequence: 'GTACGTCACAATATGATTATCTTTCTAG'
+reverse_primer_sequence: 'CGTCAATTTTACGCAGACTATC'
+# 5' overhang of the primers above, likely Nextera N7 sequence
+primer_overhang: 'GTCTCGTGGGCTCGGAGATGTGTATAAGAGACAG'
+# Sequence of the adapters loaded onto Tn5 transposase, likely Nextera N5 sequence
+adapter_seq: 'TCGTCGGCAGCGTCAGATGTGTATAAGAGACAG'
+
 insertion_seq: "TTAA"
 
 use_junction_readthrough: False
@@ -30,4 +35,9 @@ min_peak_reads: 10
 min_peak_frac: 0.01
 min_peak_dist: 1000
 
-output_dir: '../Data/Processed/'
+fastq_folder: '../Data/Raw/T1/fastq/'
+bams_folder: '../Data/Processed/T1/bams/'
+pairs_folder: '../Data/Processed/T1/pairs/'
+coverage_folder: '../Data/Processed/T1/coverage/'
+peaks_folder: '../Data/Processed/T1/peaks/'
+insertion_sites_folder: '../Data/Processed/T1/insertion_sites/'
