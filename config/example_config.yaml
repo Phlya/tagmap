@@ -18,13 +18,16 @@ dedup: True
 cassette_name: 'mobilized_enhancer'
 # Sequence of the primers used to amplify the cassette
 # If multiple PCRs were used, use the sequence of the primers used in the last step
+# Please only specify the portion of the primers that binds the ITRs
 forward_primer_sequence: 'GTACGTCACAATATGATTATCTTTCTAG'
 reverse_primer_sequence: 'CGTCAATTTTACGCAGACTATC'
 # 5' overhang of the primers above, likely Nextera N7 sequence
-primer_overhang: 'GTCTCGTGGGCTCGGAGATGTGTATAAGAGACAG'
+# primer_overhang: 'GTCTCGTGGGCTCGGAGATGTGTATAAGAGACAG'
 # Sequence of the adapters loaded onto Tn5 transposase, likely Nextera N5 sequence
 # Not used at the moment
 # adapter_seq: 'TCGTCGGCAGCGTCAGATGTGTATAAGAGACAG'
+
+# Sequenc used by the transposon for integration; e.g. TA for SB, TTAA for PB
 
 insertion_seq: "TTAA"
 
