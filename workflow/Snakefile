@@ -245,7 +245,7 @@ rule parse2:
 def get_filter(side, primer_positions_file):
     with open(primer_positions_file) as f:
         primer_positions = json.load(f)
-    walk_pair_type = 'walk_pair_type in ["R1", "R2", "R1&2"] and' if config['use_only_read_junctions'] else ''
+    walk_pair_type = '(walk_pair_type in ["R1", "R2", "R1&2"]) and' if config['use_only_read_junctions'] else ''
     forward_ITR_primer_position = primer_positions["forward_ITR_primer_position"]
     reverse_ITR_primer_position = primer_positions["reverse_ITR_primer_position"]
     selection_3prime_forward_all = f"(abs(pos32-min({cassette_length}, {forward_ITR_primer_position}+read_len1))<=2)"
@@ -292,7 +292,7 @@ rule stats:
                             --filter 'forward:{params.filter_forward}' \
                             --filter 'reverse:{params.filter_reverse}' \
                             -o {output.stats} {input.pairs} \
-        >{log[0]} 2>&1)
+        >{log[0]} 2>&1
         """
 
 rule dedup:
@@ -307,15 +307,10 @@ rule dedup:
     benchmark:
         "benchmarks/dedup/{sample}.tsv"
     threads: 1
-    params:
-        filter_forward=lambda wildcards, input: get_filter("forward", input.primer_positions),
-        filter_reverse=lambda wildcards, input: get_filter("reverse", input.primer_positions),
     shell:
         """
-        pairtools stats --engine python --yaml \
-                            --filter 'forward:{params.filter_forward}' \
-                            --filter 'reverse:{params.filter_reverse}' \
-                            -o {output.stats} - >{log[0]} 2>&1
+        pairtools dedup --backend cython --max-mismatch 0 -o {output} {input} \
+        >{log[0]} 2>&1
         """
 
 
