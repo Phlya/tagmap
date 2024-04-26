@@ -90,7 +90,7 @@ if config.get("do_fastqc", False):
 rule all:
     input:
         fastqc,
-        # expand(f"{pairs_folder}/{{sample}}_stats.yml", sample=sample_list),
+        expand(f"{pairs_folder}/{{sample}}_stats.yml", sample=sample_list),
         # expand(
         #     f"{pairs_folder}/{{sample}}_{{side}}_stats.yml",
         #     sample=sample_list,
@@ -204,7 +204,7 @@ rule bwamap:
         sort="none",
         dedup="none",
         extra="-SP -T 20",  # Lower minimal alignment score for bwa-mem to increase sensitivity for short reads and short alignments
-    threads: 10
+    threads: 12
     log:
         "logs/bwa_memx/{sample}.log",
     benchmark:
