@@ -194,7 +194,7 @@ rule bwamap:
         reads=[
             f"{fastq_folder}/{{sample}}_trimmed.R1.fastq.gz",
             f"{fastq_folder}/{{sample}}_trimmed.R2.fastq.gz",
-        ] if config['trim'] else [
+        ] if config.get('trim', False) else [
             f"{fastq_folder}/{{sample}}.R1.fastq.gz",
             f"{fastq_folder}/{{sample}}.R2.fastq.gz",
         ],
