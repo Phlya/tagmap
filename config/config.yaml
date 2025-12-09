@@ -1,12 +1,45 @@
 samples_path: './config/samples.tsv'
+# Add the sequence of the mobilized cassette
 refgen_path: '../refgen/mm10_SB_CTCF.fa'
-chrom_sizes_path: '../refgen/chromsizes.txt'
+chrom_sizes_path: '../refgen/mm10_SB_CTCF_chromsizes.txt'
+chrom_sizes_path_no_cassette: '../../../genomes/mm10/chromsizes.txt'
 
-cassette_name: 'SB_cargo_CTCF_gDNA'
-# Coordinate of the 5' of the PCR1 primer
-# alignments with 5' end +- 10 bp of this coordinate will be kept
-reverse_ITR_primer_position: 1899
-forward_ITR_primer_position: 4327
+do_fastqc: False
+
+# To enable trimming using fastp, set this to True
+trim: False
+
+# Mapper to use: bwa-mem, bwa-mem2 or bwa-meme
+# (from slowest to fastest, and from less to more memory needed)
+mapper: 'bwa-mem2'
+
+dedup: False
+
+cassette_name: 'SB_cargo_CTCF'
+# Sequence of the primers used to amplify the cassette
+# If multiple PCRs were used, use the sequence of the primers used in the last step
+reverse_primer_sequence: 'aacgagttttaatgactccaactt'
+forward_primer_sequence: 'ggtgatcctaactgacctaagac'
+# 5' overhang of the primers above, likely Nextera N7 sequence
+primer_overhang: 'GTCTCGTGGGCTCGGAGATGTGTATAAGAGACAG'
+# Sequence of the adapters loaded onto Tn5 transposase, likely Nextera N5 sequence
+# adapter_seq: 'TCGTCGGCAGCGTCAGATGTGTATAAGAGACAG'
+
+
 insertion_seq: "TA"
+
+use_only_read_junctions: False
+
 # Peak calling
-min_peak_width: 50
+min_peak_width: 1
+min_peak_reads: 100
+min_peak_frac: 0.001
+min_peak_dist: 1000
+
+fastq_folder: '../Data/Raw/T1/fastq/'
+bams_folder: '../Data/Processed/T1/bams/'
+primer_position_file: '../Data/Processed/T1/primer_positions.tsv'
+pairs_folder: '../Data/Processed/T1/pairs/'
+coverage_folder: '../Data/Processed/T1/coverage/'
+peaks_folder: '../Data/Processed/T1/peaks/'
+insertion_sites_folder: '../Data/Processed/T1/insertion_sites/'

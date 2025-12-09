@@ -111,7 +111,7 @@ rule get_primer_positions:
         script="workflow/scripts/get_primer_positions.py",
         refgen_path=refgen_path,
     output:
-        "config/primer_positions.json",
+        config["primer_position_file"],
     conda:
         "envs/pyfastx.yaml"
     params:
@@ -291,7 +291,7 @@ def get_filter(side, primer_positions_file):
 rule stats:
     input:
         pairs=f"{pairs_folder}/{{sample}}_sorted.pairs",
-        primer_positions="config/primer_positions.json",
+        primer_positions=config["primer_position_file"],
     output:
         stats=f"{pairs_folder}/{{sample}}_stats.yml",
     conda:
@@ -330,7 +330,7 @@ else:
 rule dedup:
     input:
         pairs=f"{pairs_folder}/{{sample}}_sorted.pairs",
-        primer_positions="config/primer_positions.json",
+        primer_positions=config["primer_position_file"],
     output:
         pairs=f"{pairs_folder}/{{sample}}_dupmarked.pairs",
         stats=f"{pairs_folder}/{{sample}}_stats.yml",
@@ -368,7 +368,7 @@ rule get_trans_side_pairs:
             if config.get("dedup", True)
             else f"{pairs_folder}/{{sample}}_sorted.pairs"
         ),
-        primer_positions="config/primer_positions.json",
+        primer_positions=config["primer_position_file"],
     output:
         f"{pairs_folder}/{{sample}}_{{side}}.pairs",
     conda:
