@@ -2,8 +2,7 @@ name: pairtools_env
 channels:
   - conda-forge
   - bioconda
-  - defaults
 dependencies:
   - python>=3.8
-  - pairtools==1.1.0
   - ucsc-bedgraphtobigwig
+  - pairtools

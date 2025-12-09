@@ -21,6 +21,7 @@ reverse_primer_revcomp = "".join(
 )
 for name, seq in pyfastx.Fasta(args.genome, build_index=False):
     if name == args.cassette_name:
+        seq = seq.upper()
         f_start = seq.index(forward_primer_sequence) + 1
         r_start = seq.find(reverse_primer_revcomp)
         r_end = r_start + len(reverse_primer_sequence)

@@ -1,3 +1,4 @@
+import os
 from os.path import normpath
 import numpy as np
 import pandas as pd
@@ -75,7 +76,7 @@ sample_list = np.unique(samples["name"].to_numpy())
 
 wildcard_constraints:
     sample=f"({'|'.join([re.escape(sample) for sample in sample_list])})",
-    side=("forward|reverse")
+    side=("forward|reverse"),
 
 
 fastqc = []
@@ -104,6 +105,7 @@ rule all:
             side=["forward", "reverse"],
         ),
 
+
 rule get_primer_positions:
     input:
         script="workflow/scripts/get_primer_positions.py",
@@ -111,7 +113,7 @@ rule get_primer_positions:
     output:
         "config/primer_positions.json",
     conda:
-        "envs/pyfastx.yaml",
+        "envs/pyfastx.yaml"
     params:
         cassette_name=config["cassette_name"],
         forward_primer=config["forward_primer_sequence"],
@@ -125,6 +127,7 @@ rule get_primer_positions:
         -o {output}
         """
 
+
 rule bwaindex:
     input:
         refgen_path,
@@ -135,7 +138,7 @@ rule bwaindex:
     priority: 100
     threads: 8  #Only affects bwa-meme
     log:
-        "logs/bwa-memx_index/{os.path.basename(refgen_path).rstrip('.fasta').rstrip('.fa')}.log",
+        f"logs/bwa-memx_index/{os.path.basename(refgen_path).rstrip('.fasta').rstrip('.fa')}.log",
     wrapper:
         "v3.8.0/bio/bwa-memx/index"
 
@@ -181,23 +184,30 @@ rule trim:
     threads: 2
     output:
         trimmed=[
-                f"{fastq_folder}/{{sample}}_trimmed.R1.fastq.gz",
-                f"{fastq_folder}/{{sample}}_trimmed.R2.fastq.gz"
+            f"{fastq_folder}/{{sample}}_trimmed.R1.fastq.gz",
+            f"{fastq_folder}/{{sample}}_trimmed.R2.fastq.gz",
         ],
         json=f"{fastq_folder}/{{sample}}.fastp.json",
         html=f"{fastq_folder}/{{sample}}.fastp.html",
+    params:
+        extra=config.get("trim_args", ""),
     wrapper:
         "v3.9.0/bio/fastp"
 
+
 rule bwamap:
     input:
-        reads=[
-            f"{fastq_folder}/{{sample}}_trimmed.R1.fastq.gz",
-            f"{fastq_folder}/{{sample}}_trimmed.R2.fastq.gz",
-        ] if config.get('trim', False) else [
-            f"{fastq_folder}/{{sample}}.R1.fastq.gz",
-            f"{fastq_folder}/{{sample}}.R2.fastq.gz",
-        ],
+        reads=(
+            [
+                f"{fastq_folder}/{{sample}}_trimmed.R1.fastq.gz",
+                f"{fastq_folder}/{{sample}}_trimmed.R2.fastq.gz",
+            ]
+            if config.get("trim", False)
+            else [
+                f"{fastq_folder}/{{sample}}.R1.fastq.gz",
+                f"{fastq_folder}/{{sample}}.R2.fastq.gz",
+            ]
+        ),
         reference=refgen_path,
         idx=idx,
     output:
@@ -206,8 +216,8 @@ rule bwamap:
         bwa=config["mapper"],
         sort="none",
         dedup="none",
-        extra="-SP -T 20",  # Lower minimal alignment score for bwa-mem to increase sensitivity for short reads and short alignments
-    threads: 12
+        extra="-SP -T 30",  # Lower minimal alignment score for bwa-mem to increase sensitivity for short reads and short alignments
+    threads: lambda wildcards: 12 if config["trim"] else 11
     log:
         "logs/bwa_memx/{sample}.log",
     benchmark:
@@ -221,7 +231,7 @@ rule parse2:
         bam=f"{bams_folder}/{{sample}}.bam",
         chromsizes=config["chrom_sizes_path"],
     output:
-        pairs=f"{pairs_folder}/{{sample}}_sorted.pairs"
+        pairs=f"{pairs_folder}/{{sample}}_sorted.pairs",
     conda:
         "envs/pairtools_env.yaml"
     log:
@@ -232,26 +242,34 @@ rule parse2:
     shell:
         """
         pairtools parse2 -c {input.chromsizes} --drop-sam --flip \
-        --min-mapq 30 \
-        --add-columns pos5,pos3,read_len \
+        --min-mapq 1 \
+        --max-insert-size 5000 \
+        --add-columns pos5,pos3,read_len,mapq \
         --add-pair-index \
-        --report-position read \
+        --report-position junction \
         --report-orientation pair \
         {input.bam} \
         | pairtools sort --nproc {threads} -o {output.pairs} \
         >{log[0]} 2>&1
         """
 
+
 def get_filter(side, primer_positions_file):
     with open(primer_positions_file) as f:
         primer_positions = json.load(f)
-    walk_pair_type = '(walk_pair_type in ["R1", "R2", "R1&2"]) and' if config['use_only_read_junctions'] else ''
+    walk_pair_type = (
+        '(walk_pair_type=="R2" in ["R1", "R2", "R1&2"]) and'
+        if config["use_only_read_junctions"]
+        else ""
+    )
     forward_ITR_primer_position = primer_positions["forward_ITR_primer_position"]
     reverse_ITR_primer_position = primer_positions["reverse_ITR_primer_position"]
-    selection_3prime_forward_all = f"(abs(pos32-min({cassette_length}, {forward_ITR_primer_position}+read_len1))<=2)"
-    selection_3prime_reverse_all = f"(abs(pos32-max(0, {reverse_ITR_primer_position}-read_len2))<=2)"
-    selection_3prime_forward_readthrough = f"(abs(pos32-{cassette_length})<=2)"
-    selection_3prime_reverse_readthrough = f"(abs(pos32-0)<=2)"
+    selection_3prime_forward_all = f"(abs(pos2-min({cassette_length}, {forward_ITR_primer_position}+read_len2))<=2)"
+    selection_3prime_reverse_all = (
+        f"(abs(pos2-max(0, {reverse_ITR_primer_position}-read_len2))<=2)"
+    )
+    selection_3prime_forward_readthrough = f"(abs(pos2-{cassette_length})<=2)"
+    selection_3prime_reverse_readthrough = f"(pos2<=2)"
     selection_3prime_forward = (
         selection_3prime_forward_readthrough
         if config["use_only_read_junctions"]
@@ -284,8 +302,12 @@ rule stats:
         "benchmarks/stats/{sample}.tsv"
     threads: 1
     params:
-        filter_forward=lambda wildcards, input: get_filter("forward", input.primer_positions),
-        filter_reverse=lambda wildcards, input: get_filter("reverse", input.primer_positions),
+        filter_forward=lambda wildcards, input: get_filter(
+            "forward", input.primer_positions
+        ),
+        filter_reverse=lambda wildcards, input: get_filter(
+            "reverse", input.primer_positions
+        ),
     shell:
         """
         pairtools stats --engine python --yaml \
@@ -295,11 +317,23 @@ rule stats:
         >{log[0]} 2>&1
         """
 
+
+if config.get("dedup", True):
+
+    ruleorder: dedup > stats
+
+else:
+
+    ruleorder: stats > dedup
+
+
 rule dedup:
     input:
-        f"{pairs_folder}/{{sample}}_sorted.pairs",
+        pairs=f"{pairs_folder}/{{sample}}_sorted.pairs",
+        primer_positions="config/primer_positions.json",
     output:
-        f"{pairs_folder}/{{sample}}_nodups.pairs",
+        pairs=f"{pairs_folder}/{{sample}}_dupmarked.pairs",
+        stats=f"{pairs_folder}/{{sample}}_stats.yml",
     conda:
         "envs/pairtools_env.yaml"
     log:
@@ -307,9 +341,22 @@ rule dedup:
     benchmark:
         "benchmarks/dedup/{sample}.tsv"
     threads: 1
+    params:
+        filter_forward=lambda wildcards, input: get_filter(
+            "forward", input.primer_positions
+        ),
+        filter_reverse=lambda wildcards, input: get_filter(
+            "reverse", input.primer_positions
+        ),
     shell:
         """
-        pairtools dedup --backend cython --max-mismatch 0 -o {output} {input} \
+        pairtools dedup --backend cython --mark-dups --max-mismatch 2 \
+        --p1 pos51 --p2 pos31 \
+        --engine python --yaml \
+            --filter 'forward:{params.filter_forward}' \
+            --filter 'reverse:{params.filter_reverse}' \
+        --output-stats {output.stats} \
+        --output-dups {output.pairs} -o {output.pairs} {input.pairs} \
         >{log[0]} 2>&1
         """
 
@@ -317,7 +364,7 @@ rule dedup:
 rule get_trans_side_pairs:
     input:
         pairs=lambda wildcards: (
-            f"{pairs_folder}/{{sample}}_nodups.pairs"
+            f"{pairs_folder}/{{sample}}_dupmarked.pairs"
             if config.get("dedup", True)
             else f"{pairs_folder}/{{sample}}_sorted.pairs"
         ),
@@ -332,7 +379,9 @@ rule get_trans_side_pairs:
         "benchmarks/get_trans_pairs/{sample}_{side}.tsv"
     threads: 1
     params:
-        filter=lambda wildcards, input: get_filter(wildcards.side, input.primer_positions),
+        filter=lambda wildcards, input: get_filter(
+            wildcards.side, input.primer_positions
+        ),
     shell:
         """
         pairtools select -t pos51 int -t pos31 int -t pos52 int -t pos32 int \
@@ -465,7 +514,7 @@ rule for_ucsc:
         "envs/pairtools_env.yaml"
     params:
         chromsizes=config["chrom_sizes_path_no_cassette"],
-        name=lambda wildcards: "{wildcards.sample}_{wildcards.side}",
+        name=lambda wildcards: f"{wildcards.sample}_{wildcards.side}",
     shell:
         """
         python3 {input.script} -i {input.bg} --chromsizes {params.chromsizes} \
@@ -497,6 +546,7 @@ rule find_peaks:
         min_peak_reads=config["min_peak_reads"],
         min_peak_frac=config["min_peak_frac"],
         min_peak_dist=config["min_peak_dist"],
+        min_peak_positions=config["min_peak_positions"],
         cassette_name=config["cassette_name"],
         ignore_chrom_arg="",
     shell:
@@ -505,6 +555,7 @@ rule find_peaks:
         {params.cluster_arg} {params.auto_li_arg} \
         --min-peak-width {params.min_peak_width} --min-peak-frac {params.min_peak_frac} \
         --min-peak-reads {params.min_peak_reads} --min-peak-dist {params.min_peak_dist} \
+        --min-peak-positions {params.min_peak_positions} \
         --ignore-chrom {params.cassette_name} \
         {params.ignore_chrom_arg} \
         >{log[0]} 2>&1
@@ -519,6 +570,7 @@ rule combine_peaks:
         script="workflow/scripts/combine_peaks.py",
     output:
         f"{peaks_folder}/{{sample}}_peaks.bed",
+        f"{peaks_folder}/{{sample}}_peaks_for_genome_browser.bed",
     conda:
         "envs/peaks.yaml"
     log:
@@ -534,7 +586,7 @@ rule combine_peaks:
         """
         python3 {input.script} --fwd {input.peaks_fwd} --rev {input.peaks_rev} \
         {params.blacklist_arg} \
-        --sample-name {wildcards.sample} -o {output} \
+        --sample-name {wildcards.sample} -o {output[0]} --output-genome-browser {output[1]}\
         >{log[0]} 2>&1
         """
 
@@ -553,7 +605,7 @@ rule combine_all_peaks:
     threads: 1
     shell:
         """
-        cat {input.peaks} | cut -f1,2,3,4,6,7 | sort -k4,4V -k1,1V -k2,2n -k3,3n -k5,5 > {output}
+        cat {input.peaks} | sort -k4,4V -k1,1V -k2,2n -k3,3n -k6,6 > {output}
         """
 
 
@@ -562,7 +614,8 @@ rule find_insertion_sites:
         peaks=f"{peaks_folder}/all_peaks.bed",
         script="workflow/scripts/find_insertion_sites.py",  #lambda wildcards: 'workflow/scripts/find_insertion_sites_readthrough.py' if config['use_junction_readthrough'] else 'workflow/scripts/find_insertion_sites.py'
     output:
-        f"{insertion_sites_folder}/all_sites.bed",
+        output=f"{insertion_sites_folder}/all_sites.bed",
+        for_ucsc=f"{insertion_sites_folder}/all_sites_for_ucsc.bed",
     conda:
         "envs/peaks.yaml"
     log:
@@ -573,10 +626,15 @@ rule find_insertion_sites:
     params:
         refgen_path=refgen_path,
         insertion_seq=config["insertion_seq"],
+        max_dist_between_sides=config["max_dist_between_sides"],
     shell:
         """
         python3 {input.script} --peaks {input.peaks} \
+        --max-dist {params.max_dist_between_sides} \
         --genome {params.refgen_path} --insertion-seq {params.insertion_seq} \
-        -o {output} \
+        -o {output.output} --output-for-ucsc {output.for_ucsc} \
         >{log[0]} 2>&1
         """
+
+
+# rule resgen_upload:

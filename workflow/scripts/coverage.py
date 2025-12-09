@@ -10,6 +10,9 @@ import argparse
 argparser = argparse.ArgumentParser()
 argparser.add_argument("--input", "-i", type=str)
 argparser.add_argument("--side", "-s", type=int, choices=[1, 2], default=1)
+argparser.add_argument(
+    "--end", choices=[5, 3, 0], default=0
+)  # 5' end, 3' end, or whatever is reported as pos1 and pos2 in pairs [default: 0]
 argparser.add_argument("--threads", "-t", type=int, default=1)
 argparser.add_argument("--output", "-o", type=str)
 argparser.add_argument("--output-bigwig", type=str, default=None, required=False)
@@ -101,8 +104,9 @@ if __name__ == "__main__":
         exit()
 
     s = args.side
-    pairs["start"] = pairs[f"pos{s}"] - 1
-    pairs["end"] = pairs[f"pos{s}"]
+    e = args.end if args.end != 0 else ""
+    pairs["start"] = pairs[f"pos{e}{s}"] - 1
+    pairs["end"] = pairs[f"pos{e}{s}"]
     pairs[["start", "end"]] = np.sort(pairs[["start", "end"]], axis=1)
     pairs["chrom"] = pairs[f"chrom{s}"]
 

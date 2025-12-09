@@ -7,21 +7,34 @@ import argparse
 
 argparser = argparse.ArgumentParser()
 argparser.add_argument("--peaks", type=str)
+argparser.add_argument("--max-dist", type=int, default=100)
 argparser.add_argument("--genome", "-g", type=str)
 argparser.add_argument("--insertion-seq", type=str, default="TA")
 argparser.add_argument("--output", "-o", type=str)
+argparser.add_argument("--output-for-ucsc", type=str)
 args = argparser.parse_args()
 ins_seq = args.insertion_seq
+
 peaks = (
     pd.read_csv(
         args.peaks,
         sep="\t",
         header=None,
-        names=["chrom", "start", "end", "sample_name", "fraction", "side"],
+        names=[
+            "chrom",
+            "start",
+            "end",
+            "sample_name",
+            "count",
+            "side",
+            "fraction",
+            "n_positions",
+        ],
         dtype={
             "chrom": str,
             "start": int,
             "end": int,
+            "count": int,
             "fraction": float,
             "side": str,
             "sample_name": str,
@@ -30,10 +43,12 @@ peaks = (
     .sort_values(["sample_name", "chrom", "start", "end"])
     .reset_index(drop=True)
 )
+if peaks["n_positions"].isnull().all():
+    peaks["n_positions"] = 1
 
 peaks = bioframe.cluster(
     peaks,
-    min_dist=5,
+    min_dist=args.max_dist,
     on=["sample_name"],
     return_cluster_ids=True,
 )
@@ -72,6 +87,10 @@ for record in SeqIO.parse(args.genome, "fasta"):
     if len(peaks) == 0:
         continue
     for i, row in selected.iterrows():
+        if row["strand"] == ".":
+            row[f"{ins_seq}_found"] = False
+            pinpointed.append(row)
+            continue
         seq = record.seq[row["start"] : row["end"]].upper()
         # Just finds the first TA
         i = seq.find(ins_seq)
@@ -87,6 +106,10 @@ pinpointed = pinpointed[
     ["chrom", "start", "end", "sample_name", "score", "strand", f"{ins_seq}_found"]
 ]
 
-pinpointed.sort_values(["sample_name", "chrom", "start", "end"]).to_csv(
+pinpointed.sort_values(["chrom", "start", "end", "sample_name"]).to_csv(
     args.output, sep="\t", index=False, header=True
 )
+
+pinpointed[["chrom", "start", "end", "sample_name", "score", "strand"]].sort_values(
+    ["sample_name", "chrom", "start", "end"]
+).to_csv(args.output_for_ucsc, sep="\t", index=False, header=False)
