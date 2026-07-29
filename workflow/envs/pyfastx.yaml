@@ -1,9 +1,7 @@
-name: pairtools_env
+name: tagmap_pyfastx
 channels:
   - conda-forge
   - bioconda
-  - defaults
 dependencies:
-  - python>=3.8
-  - pyfastx
-  - pyyaml
+  - python >=3.9
+  - pyfastx >=1.0

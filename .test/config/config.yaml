@@ -1,0 +1,48 @@
+# Config for the miniature test dataset built by make_test_data.py.
+samples_path: 'config/samples.tsv'
+sanger_samples_path: 'config/sanger_samples.tsv'
+
+refgen_path: 'resources/genome.fa'
+chrom_sizes_path: 'resources/chromsizes.txt'
+chrom_sizes_path_no_cassette: 'resources/chromsizes_no_cassette.txt'
+
+# bwa-mem rather than bwa-mem2, which needs more memory than a CI runner has
+mapper: 'bwa-mem'
+
+do_fastqc: False
+trim: False
+dedup: False
+
+cassette_name: 'test_cassette'
+forward_primer_sequence: 'GGTGATCCTAACTGACCTAAGAC'
+reverse_primer_sequence: 'AACGAGTTTTAATGACTCCAACTT'
+
+insertion_seq: 'TA'
+
+use_only_read_junctions: False
+
+# The test library is small, so the thresholds have to be too
+min_peak_width: 1
+min_peak_reads: 5
+min_peak_frac: 0.001
+min_peak_dist: 1000
+min_peak_positions: 1
+max_dist_between_sides: 300
+
+sanger_basecaller: 'abi-trim'
+sanger_min_mapq: 30
+sanger_name_regex: '(?P<well>[A-H]\d{2})_(?P<run>\d+)_(?P<direction>[FR])'
+sanger_max_dist: 100
+
+validate_sanger_with_ngs: True
+validation_max_dist: 500
+
+fastq_folder: 'results/fastq'
+bams_folder: 'results/bams'
+primer_position_file: 'results/primer_positions.json'
+pairs_folder: 'results/pairs'
+coverage_folder: 'results/coverage'
+peaks_folder: 'results/peaks'
+insertion_sites_folder: 'results/insertion_sites'
+sanger_folder: 'results/sanger'
+validation_folder: 'results/validation'

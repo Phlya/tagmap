@@ -4,12 +4,33 @@
 [![GitHub actions status](https://github.com/<owner>/<repo>/workflows/Tests/badge.svg?branch=main)](https://github.com/<owner>/<repo>/actions?query=branch%3Amain+workflow%3ATests)
 
 
-A Snakemake workflow for analysing tagmentation mapping data (https://www.biorxiv.org/content/10.1101/037762v5.full)
+A Snakemake workflow for mapping transposon integration sites from tagmentation
+mapping data (https://www.biorxiv.org/content/10.1101/037762v5.full), either
+from pooled NGS libraries or from individual Sanger reads of clonal lines.
 
+Two complementary ways of finding an integration site are supported, and can
+be run together or on their own:
+
+- **NGS**: paired-end tagmentation libraries are mapped, filtered down to
+  read pairs anchored at an ITR primer, and turned into peaks and then
+  single-base insertion sites. Suited to pooled populations, and reports both
+  sides of an insertion when both were captured.
+- **Sanger**: individual long reads from a clonal line - typically `.ab1`
+  traces from one well per clone - are mapped directly, and the exact
+  cassette/genome junction is read off each read. Suited to identifying the
+  integration site in a specific clone.
+
+When both are configured for the same material, Sanger sites can be
+cross-validated against the NGS data (`validate_sanger_with_ngs`): a Sanger
+read that only worked from one ITR primer can still be trusted if the NGS
+library shows an insertion at the same position from both sides.
 
 ## Usage
 
-The usage of this workflow is described in the [Snakemake Workflow Catalog](https://snakemake.github.io/snakemake-workflow-catalog/?usage=Phlya%2Ftagmap).
+See `config/README.md` for how to configure the workflow, and
+`config/example_config.yaml` for a fully commented example. A minimal test
+dataset lives under `.test/`.
 
-If you use this workflow in a paper, don't forget to give credits to the authors by citing the URL of this (original) repository and its DOI (see above).
-
+If you use this workflow in a paper, don't forget to give credits to the
+authors by citing the URL of this (original) repository and its DOI (see
+above).

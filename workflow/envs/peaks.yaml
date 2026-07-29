@@ -1,10 +1,11 @@
-name: coverage
+name: tagmap_peaks
 channels:
   - conda-forge
   - bioconda
-  - defaults
 dependencies:
-  - python>=3.8
-  - bioframe
-  - scikit-image
-  - biopython
+  - python >=3.9
+  - bioframe >=0.4
+  - pandas >=1.5
+  - numpy
+  - pyfastx >=1.0
+  - scikit-image >=0.19

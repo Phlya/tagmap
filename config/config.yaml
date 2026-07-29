@@ -1,7 +1,13 @@
+# Sample sheets. Give either or both: NGS libraries are analysed by peak
+# calling, Sanger reads one read at a time. Every key not set here falls back to
+# the default in workflow/schemas/config.schema.yaml.
 samples_path: './config/samples.tsv'
-# Add the sequence of the mobilized cassette
+sanger_samples_path: './config/sanger_samples.tsv'
+
+# Reference genome, with the mobilised cassette added as an extra contig
 refgen_path: '../refgen/mm10_SB_CTCF.fa'
 chrom_sizes_path: '../refgen/mm10_SB_CTCF_chromsizes.txt'
+# Chrom sizes of the genome alone, for genome browser output
 chrom_sizes_path_no_cassette: '../../../genomes/mm10/chromsizes.txt'
 
 do_fastqc: False
@@ -16,6 +22,8 @@ mapper: 'bwa-mem2'
 dedup: False
 
 cassette_name: 'SB_cargo_CTCF'
+# Further contigs that are part of the construct rather than the genome
+construct_contigs: []
 # Sequence of the primers used to amplify the cassette
 # If multiple PCRs were used, use the sequence of the primers used in the last step
 reverse_primer_sequence: 'aacgagttttaatgactccaactt'
@@ -25,21 +33,38 @@ primer_overhang: 'GTCTCGTGGGCTCGGAGATGTGTATAAGAGACAG'
 # Sequence of the adapters loaded onto Tn5 transposase, likely Nextera N5 sequence
 # adapter_seq: 'TCGTCGGCAGCGTCAGATGTGTATAAGAGACAG'
 
-
+# Sequence used by the transposon for integration; e.g. TA for SB, TTAA for PB
 insertion_seq: "TA"
 
 use_only_read_junctions: False
 
-# Peak calling
+# Peak calling (NGS only)
 min_peak_width: 1
 min_peak_reads: 100
 min_peak_frac: 0.001
 min_peak_dist: 1000
+min_peak_positions: 1
+max_dist_between_sides: 100
+
+# Sanger reads
+# 'abi-trim' uses the base calls stored in the trace, 'tracy' re-calls them
+sanger_basecaller: 'abi-trim'
+sanger_min_mapq: 30
+# Named groups pulled out of each trace file name. Recognised: well, clone,
+# direction; anything else is kept as an extra column.
+# sanger_name_regex: '(?P<well>[A-H]\d{2})_(?P<run>\d+)'
+sanger_max_dist: 100
+
+# Cross-validation of Sanger sites against NGS sites, when both are configured
+validate_sanger_with_ngs: True
+validation_max_dist: 500
 
 fastq_folder: '../Data/Raw/T1/fastq/'
 bams_folder: '../Data/Processed/T1/bams/'
-primer_position_file: '../Data/Processed/T1/primer_positions.tsv'
+primer_position_file: '../Data/Processed/T1/primer_positions.json'
 pairs_folder: '../Data/Processed/T1/pairs/'
 coverage_folder: '../Data/Processed/T1/coverage/'
 peaks_folder: '../Data/Processed/T1/peaks/'
 insertion_sites_folder: '../Data/Processed/T1/insertion_sites/'
+sanger_folder: '../Data/Processed/T1/sanger/'
+validation_folder: '../Data/Processed/T1/validation/'

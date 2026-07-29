@@ -1,0 +1,39 @@
+$schema: "https://json-schema.org/draft/2020-12/schema"
+description: >
+  One Sanger run - typically a plate of .ab1 traces. Rows sharing a name are
+  merged, so a plate sequenced from both ends can be given as two rows with
+  different directions.
+type: object
+
+properties:
+  name:
+    type: string
+    description: Run/plate name.
+  ab1:
+    type: string
+    description: >
+      Folder of .ab1 traces, or a glob such as 'Data/Raw/plate1/*.ab1'. Give
+      either this or fastq.
+  fastq:
+    type: string
+    description: >
+      Already basecalled reads, skipping basecalling. Give either this or ab1.
+  direction:
+    type: string
+    enum: ["forward", "reverse"]
+    description: >
+      Which ITR primer these reads were sequenced from. Overridden by the
+      direction group of sanger_name_regex when that matches.
+  clone:
+    type: string
+    description: >
+      Clone id for the whole row, when the read names do not carry one.
+  ngs_sample:
+    type: string
+    description: >
+      Name of the NGS sample in samples_path that covers the same material.
+      When given, validation only considers sites from that sample; otherwise
+      all NGS sites are considered.
+
+required:
+  - name

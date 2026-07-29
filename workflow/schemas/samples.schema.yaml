@@ -1,0 +1,19 @@
+$schema: "https://json-schema.org/draft/2020-12/schema"
+description: One paired-end NGS library. Rows sharing a name are merged.
+type: object
+
+properties:
+  name:
+    type: string
+    description: Sample name. Repeat it across rows to merge several fastq pairs.
+  fastq1:
+    type: string
+    description: Path to the R1 fastq(.gz).
+  fastq2:
+    type: string
+    description: Path to the R2 fastq(.gz).
+
+required:
+  - name
+  - fastq1
+  - fastq2

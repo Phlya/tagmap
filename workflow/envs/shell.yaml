@@ -1,0 +1,6 @@
+# For the rules that only concatenate and sort files.
+name: tagmap_shell
+channels:
+  - conda-forge
+dependencies:
+  - coreutils
