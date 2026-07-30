@@ -14,7 +14,7 @@ rule merge_fastq:
     log:
         "logs/merge_fastq/{sample}_{read}.log",
     conda:
-        "../envs/shell.yaml"
+        "../envs/all.yaml"
     shell:
         """
         cat {input} >{output} 2>{log[0]}
@@ -104,7 +104,7 @@ rule parse2:
     benchmark:
         "benchmarks/parse2/{sample}.tsv"
     conda:
-        "../envs/pairtools_env.yaml"
+        "../envs/all.yaml"
     threads: 8
     shell:
         """
@@ -141,7 +141,7 @@ rule stats:
     benchmark:
         "benchmarks/stats/{sample}.tsv"
     conda:
-        "../envs/pairtools_env.yaml"
+        "../envs/all.yaml"
     threads: 1
     params:
         filter_forward=lambda wildcards, input: get_filter(
@@ -172,7 +172,7 @@ rule dedup:
     benchmark:
         "benchmarks/dedup/{sample}.tsv"
     conda:
-        "../envs/pairtools_env.yaml"
+        "../envs/all.yaml"
     threads: 1
     params:
         filter_forward=lambda wildcards, input: get_filter(
@@ -209,7 +209,7 @@ rule get_trans_side_pairs:
     benchmark:
         "benchmarks/get_trans_pairs/{sample}_{side}.tsv"
     conda:
-        "../envs/pairtools_env.yaml"
+        "../envs/all.yaml"
     threads: 1
     params:
         filter=lambda wildcards, input: get_filter(
@@ -237,7 +237,7 @@ rule coverage:
     benchmark:
         "benchmarks/coverage/{sample}_{side}.tsv"
     conda:
-        "../envs/pairtools_env.yaml"
+        "../envs/all.yaml"
     threads: 1
     params:
         side=1,
@@ -260,7 +260,7 @@ rule find_peaks:
     benchmark:
         "benchmarks/find_peaks/{sample}_{side}.tsv"
     conda:
-        "../envs/peaks.yaml"
+        "../envs/all.yaml"
     threads: 1
     params:
         cluster_arg=(
@@ -301,7 +301,7 @@ rule combine_peaks:
     benchmark:
         "benchmarks/combine_peaks/{sample}.tsv"
     conda:
-        "../envs/peaks.yaml"
+        "../envs/all.yaml"
     threads: 1
     params:
         blacklist_arg=lambda wildcards, input: (
@@ -326,7 +326,7 @@ rule combine_all_peaks:
     benchmark:
         "benchmarks/combine_all_peaks/benchmark.tsv"
     conda:
-        "../envs/shell.yaml"
+        "../envs/all.yaml"
     threads: 1
     shell:
         """

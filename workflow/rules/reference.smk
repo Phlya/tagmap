@@ -23,10 +23,10 @@ rule fasta_index:
     log:
         "logs/fasta_index/log.log",
     conda:
-        "../envs/pyfastx.yaml"
+        "../envs/all.yaml"
     shell:
         """
-        python3 -c "import pyfastx, sys; pyfastx.Fasta(sys.argv[1], index_file=sys.argv[2])" \
+        python3 -c "import pysam, sys; pysam.faidx(sys.argv[1], '-o', sys.argv[2])" \
             {input} {output} >{log[0]} 2>&1
         """
 
@@ -40,7 +40,7 @@ rule get_primer_positions:
     log:
         "logs/get_primer_positions/log.log",
     conda:
-        "../envs/pyfastx.yaml"
+        "../envs/all.yaml"
     params:
         cassette_name=config["cassette_name"],
         forward_primer=config["forward_primer_sequence"],

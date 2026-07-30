@@ -1,7 +1,0 @@
-name: tagmap_pyfastx
-channels:
-  - conda-forge
-  - bioconda
-dependencies:
-  - python >=3.9
-  - pyfastx >=1.0

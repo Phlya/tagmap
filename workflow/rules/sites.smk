@@ -8,7 +8,7 @@ rule for_ucsc:
     log:
         "logs/for_ucsc/{sample}_{side}.log",
     conda:
-        "../envs/pairtools_env.yaml"
+        "../envs/all.yaml"
     params:
         chromsizes=config.get("chrom_sizes_path_no_cassette", ""),
         name=lambda wildcards: f"{wildcards.sample}_{wildcards.side}",
@@ -34,7 +34,7 @@ rule find_insertion_sites:
     benchmark:
         "benchmarks/find_insertion_sites/all.tsv"
     conda:
-        "../envs/peaks.yaml"
+        "../envs/all.yaml"
     threads: 1
     params:
         insertion_seq=config["insertion_seq"],

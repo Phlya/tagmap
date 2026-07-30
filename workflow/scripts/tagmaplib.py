@@ -7,7 +7,7 @@ script's own directory on ``sys.path``, so no installation is needed.
 
 import numpy as np
 import pandas as pd
-import pyfastx
+import pysam
 
 # Columns of the per-sample peak files written by combine_peaks.py and
 # concatenated into all_peaks.bed.
@@ -77,8 +77,8 @@ def find_insertion_seq(df, genome, ins_seq, window=0, mode="first", index_file=N
 
     Transposons integrate into a fixed short motif (TA for Sleeping Beauty,
     TTAA for PiggyBac), so the exact integration site can be recovered by
-    searching around the mapped junction. Uses pyfastx random access rather
-    than streaming the whole genome.
+    searching around the mapped junction. Uses pysam's faidx-based random
+    access rather than streaming the whole genome.
 
     Searches ``[start - window, end + window)`` and returns the 0-based genomic
     start of the chosen occurrence per row, or -1 where there is none. ``mode``
@@ -95,8 +95,11 @@ def find_insertion_seq(df, genome, ins_seq, window=0, mode="first", index_file=N
     if df.shape[0] == 0:
         return result
 
-    fasta = pyfastx.Fasta(genome, index_file=index_file, uppercase=True)
-    chrom_lengths = {name: len(fasta[name]) for name in fasta.keys()}
+    # pyfastx's random-access reader segfaults on genomes in the multi-GB
+    # range (reproduces even without calling .fetch() at all, so it is not
+    # data-dependent) - pysam.FastaFile is the well-exercised equivalent.
+    fasta = pysam.FastaFile(genome, filepath_index=index_file)
+    chrom_lengths = dict(zip(fasta.references, fasta.lengths))
 
     for i, row in df.iterrows():
         if row.get("strand", ".") == "." or row["chrom"] not in chrom_lengths:
@@ -105,8 +108,8 @@ def find_insertion_seq(df, genome, ins_seq, window=0, mode="first", index_file=N
         hi = min(chrom_lengths[row["chrom"]], int(row["end"]) + window)
         if hi - lo < len(ins_seq):
             continue
-        # pyfastx.fetch takes a 1-based, inclusive interval.
-        seq = fasta.fetch(row["chrom"], (lo + 1, hi))
+        # pysam.FastaFile.fetch takes a 0-based, half-open interval.
+        seq = fasta.fetch(row["chrom"], lo, hi).upper()
         hits = []
         j = seq.find(ins_seq)
         while j != -1:

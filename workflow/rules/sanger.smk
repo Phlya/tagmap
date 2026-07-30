@@ -13,7 +13,7 @@ rule ab1_to_fastq:
     benchmark:
         "benchmarks/ab1_to_fastq/{sample}.tsv"
     conda:
-        "../envs/sanger.yaml"
+        "../envs/all.yaml"
     threads: 1
     params:
         basecaller=config["sanger_basecaller"],
@@ -63,7 +63,7 @@ rule sanger_sites:
     benchmark:
         "benchmarks/sanger_sites/{sample}.tsv"
     conda:
-        "../envs/sanger.yaml"
+        "../envs/all.yaml"
     threads: 1
     params:
         construct_contigs=" ".join(construct_contigs),
@@ -121,7 +121,7 @@ rule combine_sanger_sites:
     benchmark:
         "benchmarks/combine_sanger_sites/benchmark.tsv"
     conda:
-        "../envs/sanger.yaml"
+        "../envs/all.yaml"
     threads: 1
     params:
         max_dist=config["sanger_max_dist"],

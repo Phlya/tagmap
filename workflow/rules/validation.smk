@@ -16,7 +16,7 @@ rule compare_sanger_ngs:
     benchmark:
         "benchmarks/compare_sanger_ngs/benchmark.tsv"
     conda:
-        "../envs/sanger.yaml"
+        "../envs/all.yaml"
     threads: 1
     params:
         max_dist=config["validation_max_dist"],

@@ -207,11 +207,11 @@ properties:
     default: "results/primer_positions.json"
   fasta_index_file:
     type: string
-    default: "results/refgen.fxi"
+    default: "results/refgen.fai"
     description: >
-      pyfastx index of refgen_path, used to look up sequence at insertion
-      sites. Kept here rather than next to the FASTA so that a shared, read
-      only reference genome still works.
+      samtools/pysam .fai index of refgen_path, used to look up sequence at
+      insertion sites. Kept here rather than next to the FASTA so that a
+      shared, read only reference genome still works.
 
 required:
   - refgen_path
