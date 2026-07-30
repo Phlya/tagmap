@@ -178,40 +178,48 @@ properties:
     description: Distance within which a Sanger and an NGS site are the same site.
 
   # --------------------------------------------------------------- outputs --
+  results_folder:
+    type: string
+    default: "results"
+    description: >
+      Base folder for every output below that is not given its own path.
+      Usually the only one of the output settings worth setting - give this
+      one path and get a self-contained, namespaced results tree; the rest
+      only need overriding if you want a particular file somewhere else.
   fastq_folder:
     type: string
-    default: "results/fastq"
+    description: Defaults to "{results_folder}/fastq".
   bams_folder:
     type: string
-    default: "results/bams"
+    description: Defaults to "{results_folder}/bams".
   pairs_folder:
     type: string
-    default: "results/pairs"
+    description: Defaults to "{results_folder}/pairs".
   coverage_folder:
     type: string
-    default: "results/coverage"
+    description: Defaults to "{results_folder}/coverage".
   peaks_folder:
     type: string
-    default: "results/peaks"
+    description: Defaults to "{results_folder}/peaks".
   insertion_sites_folder:
     type: string
-    default: "results/insertion_sites"
+    description: Defaults to "{results_folder}/insertion_sites".
   sanger_folder:
     type: string
-    default: "results/sanger"
+    description: Defaults to "{results_folder}/sanger".
   validation_folder:
     type: string
-    default: "results/validation"
+    description: Defaults to "{results_folder}/validation".
   primer_position_file:
     type: string
-    default: "results/primer_positions.json"
+    description: Defaults to "{results_folder}/primer_positions.json".
   fasta_index_file:
     type: string
-    default: "results/refgen.fai"
     description: >
       samtools/pysam .fai index of refgen_path, used to look up sequence at
       insertion sites. Kept here rather than next to the FASTA so that a
-      shared, read only reference genome still works.
+      shared, read only reference genome still works. Defaults to
+      "{results_folder}/refgen.fai".
 
 required:
   - refgen_path

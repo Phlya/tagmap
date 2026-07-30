@@ -59,12 +59,5 @@ sanger_max_dist: 100
 validate_sanger_with_ngs: True
 validation_max_dist: 500
 
+results_folder: '../Data/Processed/T1/'
 fastq_folder: '../Data/Raw/T1/fastq/'
-bams_folder: '../Data/Processed/T1/bams/'
-primer_position_file: '../Data/Processed/T1/primer_positions.json'
-pairs_folder: '../Data/Processed/T1/pairs/'
-coverage_folder: '../Data/Processed/T1/coverage/'
-peaks_folder: '../Data/Processed/T1/peaks/'
-insertion_sites_folder: '../Data/Processed/T1/insertion_sites/'
-sanger_folder: '../Data/Processed/T1/sanger/'
-validation_folder: '../Data/Processed/T1/validation/'

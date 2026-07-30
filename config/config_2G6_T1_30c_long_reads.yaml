@@ -68,13 +68,4 @@ sanger_max_dist: 100
 validate_sanger_with_ngs: True
 validation_max_dist: 500
 
-fastq_folder: 'results/2G6_T1_30c_long_reads/fastq/'
-bams_folder: 'results/2G6_T1_30c_long_reads/bams/'
-primer_position_file: 'results/2G6_T1_30c_long_reads/primer_positions.json'
-pairs_folder: 'results/2G6_T1_30c_long_reads/pairs/'
-coverage_folder: 'results/2G6_T1_30c_long_reads/coverage/'
-peaks_folder: 'results/2G6_T1_30c_long_reads/peaks/'
-insertion_sites_folder: 'results/2G6_T1_30c_long_reads/insertion_sites/'
-sanger_folder: 'results/2G6_T1_30c_long_reads/sanger/'
-validation_folder: 'results/2G6_T1_30c_long_reads/validation/'
-fasta_index_file: 'results/2G6_T1_30c_long_reads/refgen.fai'
+results_folder: 'results/2G6_T1_30c_long_reads'

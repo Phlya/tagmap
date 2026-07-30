@@ -9,6 +9,24 @@ from snakemake.utils import validate
 
 validate(config, schema="../schemas/config.schema.yaml")
 
+# Every output path below can be set individually, but defaults to living
+# under results_folder, so that in the common case one path is enough for a
+# whole self-contained, namespaced results tree.
+config.setdefault("results_folder", "results")
+for _key, _subpath in {
+    "fastq_folder": "fastq",
+    "bams_folder": "bams",
+    "pairs_folder": "pairs",
+    "coverage_folder": "coverage",
+    "peaks_folder": "peaks",
+    "insertion_sites_folder": "insertion_sites",
+    "sanger_folder": "sanger",
+    "validation_folder": "validation",
+    "primer_position_file": "primer_positions.json",
+    "fasta_index_file": "refgen.fai",
+}.items():
+    config.setdefault(_key, os.path.join(config["results_folder"], _subpath))
+
 
 # Anchored to the workflow rather than the working directory, so that the
 # pipeline can be run from anywhere - including from .test, as CI does.

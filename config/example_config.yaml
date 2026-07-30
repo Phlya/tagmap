@@ -80,12 +80,21 @@ sanger_max_dist: 100
 validate_sanger_with_ngs: True
 validation_max_dist: 500
 
+# Every individual output path below defaults to living under here, so this
+# is usually the only one of the lot worth setting.
+results_folder: '../Data/Processed/T1/'
+# None of the following are necessary - each is shown commented out with the
+# value it already gets from results_folder above. Uncomment one only to
+# send that particular file/folder somewhere else, as is done here for
+# fastq_folder, to keep the merged-but-untrimmed fastqs with the raw ones
+# rather than under Processed.
 fastq_folder: '../Data/Raw/T1/fastq/'
-bams_folder: '../Data/Processed/T1/bams/'
-primer_position_file: '../Data/Processed/T1/primer_positions.json'
-pairs_folder: '../Data/Processed/T1/pairs/'
-coverage_folder: '../Data/Processed/T1/coverage/'
-peaks_folder: '../Data/Processed/T1/peaks/'
-insertion_sites_folder: '../Data/Processed/T1/insertion_sites/'
-sanger_folder: '../Data/Processed/T1/sanger/'
-validation_folder: '../Data/Processed/T1/validation/'
+# bams_folder: '../Data/Processed/T1/bams'
+# pairs_folder: '../Data/Processed/T1/pairs'
+# coverage_folder: '../Data/Processed/T1/coverage'
+# peaks_folder: '../Data/Processed/T1/peaks'
+# insertion_sites_folder: '../Data/Processed/T1/insertion_sites'
+# sanger_folder: '../Data/Processed/T1/sanger'
+# validation_folder: '../Data/Processed/T1/validation'
+# primer_position_file: '../Data/Processed/T1/primer_positions.json'
+# fasta_index_file: '../Data/Processed/T1/refgen.fai'
