@@ -1,0 +1,5 @@
+name	fastq1	fastq2
+Tagm2G6_Ganc_30c	../SB_tagmentation_mapping/Data/Raw/miseqdata/250109_M04764_0290_000000000-GNWDD/Fastq/3917F1-1_S1_L001_R1_001.fastq.gz	../SB_tagmentation_mapping/Data/Raw/miseqdata/250109_M04764_0290_000000000-GNWDD/Fastq/3917F1-1_S1_L001_R2_001.fastq.gz
+Tagm2G6_Bvdu_30c	../SB_tagmentation_mapping/Data/Raw/miseqdata/250109_M04764_0290_000000000-GNWDD/Fastq/3917F2-1_S2_L001_R1_001.fastq.gz	../SB_tagmentation_mapping/Data/Raw/miseqdata/250109_M04764_0290_000000000-GNWDD/Fastq/3917F2-1_S2_L001_R2_001.fastq.gz
+Tagm2G6_Ganc_30c	../SB_tagmentation_mapping/Data/Raw/miseqdata/250109_M04764_0290_000000000-GNWDD/Fastq/3917F3-1_S3_L001_R1_001.fastq.gz	../SB_tagmentation_mapping/Data/Raw/miseqdata/250109_M04764_0290_000000000-GNWDD/Fastq/3917F3-1_S3_L001_R2_001.fastq.gz
+Tagm2G6_Bvdu_30c	../SB_tagmentation_mapping/Data/Raw/miseqdata/250109_M04764_0290_000000000-GNWDD/Fastq/3917F4-1_S4_L001_R1_001.fastq.gz	../SB_tagmentation_mapping/Data/Raw/miseqdata/250109_M04764_0290_000000000-GNWDD/Fastq/3917F4-1_S4_L001_R2_001.fastq.gz

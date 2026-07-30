@@ -1,0 +1,9 @@
+name	ab1	fastq	direction	clone	ngs_sample
+plate1	../SB_Sanger_tagmentation_mapping_2G6/Data/Raw/4320166_2025_02_19_07_02_50/*_99465_*.ab1
+plate1	../SB_Sanger_tagmentation_mapping_2G6/Data/Raw/4320166_2025_02_19_07_02_50/*_99467_*.ab1
+plate3	../SB_Sanger_tagmentation_mapping_2G6/Data/Raw/4320166_2025_02_19_07_02_50/*_99466_*.ab1
+plate3	../SB_Sanger_tagmentation_mapping_2G6/Data/Raw/4320166_2025_02_19_07_02_50/*_99468_*.ab1
+plate4	../SB_Sanger_tagmentation_mapping_2G6/Data/Raw/4321485_2025_02_20_07_39_19/*_99469_*.ab1
+plate4	../SB_Sanger_tagmentation_mapping_2G6/Data/Raw/4321485_2025_02_20_07_39_19/*_99470_*.ab1
+plate5	../SB_Sanger_tagmentation_mapping_2G6/Data/Raw/4321485_2025_02_20_07_39_19/*_99471_*.ab1
+plate5	../SB_Sanger_tagmentation_mapping_2G6/Data/Raw/4321485_2025_02_20_07_39_19/*_99472_*.ab1

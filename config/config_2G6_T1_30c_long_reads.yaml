@@ -1,0 +1,80 @@
+# Test dataset for the tagmap pipeline, combining real data from two earlier,
+# repo-per-experiment projects:
+# - NGS: the 2G6 T1 30 degree long-read MiSeq run, adapted from
+#   SB_tagmentation_mapping/tagmap/config/config_2G6_T1_30c_long_reads.yaml.
+# - Sanger: the February 2025 96-well plates from
+#   SB_Sanger_tagmentation_mapping_2G6 (plates 1, 3, 4 and the partial plate 5).
+# Raw data is read in place from those two sibling project directories rather
+# than copied.
+
+samples_path: './config/samples_2G6_T1_30c_long_reads.tsv'
+sanger_samples_path: './config/sanger_samples_2G6_feb2025.tsv'
+
+# Reference genome, with the mobilized cassette added as an extra contig
+refgen_path: '../SB_tagmentation_mapping/refgen_2G6/mm10_SB_CTCF.fa'
+chrom_sizes_path: '../SB_tagmentation_mapping/refgen_2G6/mm10_SB_CTCF_chromsizes.txt'
+chrom_sizes_path_no_cassette: '../../genomes/mm10/chromsizes.txt'
+
+do_fastqc: False
+
+# To enable trimming using fastp, set this to True
+trim: False
+
+mapper: 'bwa-mem2'
+
+dedup: True
+
+cassette_name: 'SB_cargo_CTCF'
+
+# Sequence of the primers used to amplify the cassette
+# If multiple PCRs were used, use the sequence of the primers used in the last step
+reverse_primer_sequence: 'aacgagttttaatgactccaactt'
+forward_primer_sequence: 'TCCTAACTGACCTAAGACAGG'
+# 5' overhang of the primers above, likely Nextera N7 sequence
+primer_overhang: 'GTCTCGTGGGCTCGGAGATGTGTATAAGAGACAG'
+
+# Sequence used by the transposon for integration; e.g. TA for SB, TTAA for PB
+insertion_seq: "TA"
+
+use_only_read_junctions: True
+
+# Peak calling (NGS only)
+min_peak_width: 1
+min_peak_reads: 1
+min_peak_frac: 0.0
+min_peak_dist: 500
+min_peak_positions: 1
+max_dist_between_sides: 2
+
+# Sanger reads
+# 'abi-trim' uses the base calls stored in the trace, 'tracy' re-calls them
+sanger_basecaller: 'abi-trim'
+sanger_min_mapq: 30
+# Trace files are named e.g. 'A01_99465_SB_fwd_seq.ab1' (forward primer) and
+# 'A01_99467_852.ab1' (reverse primer, named after that primer's id rather
+# than the word 'reverse'), so direction is read off that token via
+# sanger_direction_map rather than an 'fwd'/'rev' literal. clone is left to
+# default to well, which - combined with the plate given by each row's name -
+# keeps identically-labelled wells on different plates apart.
+sanger_name_regex: '(?P<well>[A-H]\d{2})_\d+_(?P<direction>SB_fwd_seq|852)'
+sanger_direction_map:
+  SB_fwd_seq: forward
+  "852": reverse
+sanger_max_dist: 100
+
+# Cross-validation of Sanger sites against NGS sites, when both are configured.
+# None of the Sanger rows name an ngs_sample, so each plate is compared
+# against every NGS sample rather than one specific condition.
+validate_sanger_with_ngs: True
+validation_max_dist: 500
+
+fastq_folder: 'results/2G6_T1_30c_long_reads/fastq/'
+bams_folder: 'results/2G6_T1_30c_long_reads/bams/'
+primer_position_file: 'results/2G6_T1_30c_long_reads/primer_positions.json'
+pairs_folder: 'results/2G6_T1_30c_long_reads/pairs/'
+coverage_folder: 'results/2G6_T1_30c_long_reads/coverage/'
+peaks_folder: 'results/2G6_T1_30c_long_reads/peaks/'
+insertion_sites_folder: 'results/2G6_T1_30c_long_reads/insertion_sites/'
+sanger_folder: 'results/2G6_T1_30c_long_reads/sanger/'
+validation_folder: 'results/2G6_T1_30c_long_reads/validation/'
+fasta_index_file: 'results/2G6_T1_30c_long_reads/refgen.fai'
