@@ -7,7 +7,9 @@ rule report:
         script=f"{scripts_dir}/report.py",
         ngs_qc=f"{stats_folder}/ngs_qc_stats.tsv" if sample_list else [],
         sanger_qc=f"{stats_folder}/sanger_qc_stats.tsv" if sanger_sample_list else [],
-        sanger_clones=f"{stats_folder}/sanger_clone_summary.tsv" if sanger_sample_list else [],
+        sanger_clones=f"{stats_folder}/sanger_clone_summary.tsv"
+        if sanger_sample_list
+        else [],
         validation=f"{stats_folder}/validation_summary.tsv" if do_validation else [],
     output:
         f"{stats_folder}/report.md",
