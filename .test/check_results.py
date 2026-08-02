@@ -5,6 +5,7 @@ Exits non-zero with a description of what is wrong, so CI fails loudly rather
 than on a missing file.
 """
 
+import os
 import sys
 
 import pandas as pd
@@ -68,6 +69,55 @@ check(
     bool(validation["ngs_two_sided"].all()),
     "every matching NGS site should have been two-sided",
 )
+
+# The new stats/ tables should agree with what the checks above already
+# established directly from the site files.
+ngs_sidedness = pd.read_csv("results/stats/ngs_site_sidedness.tsv", sep="\t")
+clone1_sidedness = ngs_sidedness[ngs_sidedness["sample_name"] == "clone1"]
+check(
+    clone1_sidedness.shape[0] == 1
+    and clone1_sidedness["n_sites"].iloc[0] == EXPECTED.shape[0]
+    and clone1_sidedness["n_two_sided"].iloc[0] == EXPECTED.shape[0]
+    and clone1_sidedness["n_one_sided"].iloc[0] == 0,
+    "ngs_site_sidedness.tsv should show both sites as two-sided for clone1",
+)
+
+ngs_mapping = pd.read_csv("results/stats/ngs_mapping_stats.tsv", sep="\t")
+clone1_mapping = ngs_mapping[ngs_mapping["sample_name"] == "clone1"]
+check(
+    clone1_mapping.shape[0] == 1 and clone1_mapping["mobilized_pairs"].iloc[0] > 0,
+    "ngs_mapping_stats.tsv should show mobilized pairs for clone1",
+)
+
+# A01 was sequenced from both primers, B01 only ever had a forward read - the
+# reverse primer was never attempted for it, rather than attempted and failed.
+sanger_clones = pd.read_csv("results/stats/sanger_clone_summary.tsv", sep="\t")
+a01 = sanger_clones[sanger_clones["clone"] == "A01"]
+check(
+    a01.shape[0] == 1
+    and bool(a01["both_sides_confirmed"].iloc[0])
+    and a01["forward_status"].iloc[0] == "confirmed"
+    and a01["reverse_status"].iloc[0] == "confirmed",
+    "sanger_clone_summary.tsv should show clone A01 confirmed from both primers",
+)
+b01 = sanger_clones[sanger_clones["clone"] == "B01"]
+check(
+    b01.shape[0] == 1
+    and not bool(b01["both_sides_confirmed"].iloc[0])
+    and b01["forward_status"].iloc[0] == "confirmed"
+    and b01["reverse_status"].iloc[0] == "no data",
+    "sanger_clone_summary.tsv should show clone B01 confirmed forward-only, "
+    "with the reverse primer never attempted",
+)
+
+validation_summary = pd.read_csv("results/stats/validation_summary.tsv", sep="\t")
+totals = validation_summary[validation_summary["sample_name"] == "all"]
+check(
+    totals.shape[0] == 1 and totals["n_confirmed"].iloc[0] == EXPECTED.shape[0],
+    "validation_summary.tsv should show every Sanger site confirmed",
+)
+
+check(os.path.getsize("results/stats/report.md") > 0, "report.md should not be empty")
 
 if problems:
     print("FAILED:")

@@ -1,5 +1,6 @@
 localrules:
     compare_sanger_ngs,
+    validation_stats,
 
 
 rule compare_sanger_ngs:
@@ -31,5 +32,23 @@ rule compare_sanger_ngs:
             --ngs-sites {input.ngs_sites} --ngs-peaks {input.ngs_peaks} \
             --max-dist {params.max_dist} {params.pairs_arg} \
             -o {output.table} --output-confirmed {output.confirmed} \
+            >{log[0]} 2>&1
+        """
+
+
+rule validation_stats:
+    input:
+        validation=f"{validation_folder}/sanger_vs_ngs.tsv",
+        script=f"{scripts_dir}/validation_stats.py",
+    output:
+        f"{stats_folder}/validation_summary.tsv",
+    log:
+        "logs/validation_stats/log.log",
+    conda:
+        "../envs/all.yaml"
+    threads: 1
+    shell:
+        """
+        python3 {input.script} --validation {input.validation} -o {output} \
             >{log[0]} 2>&1
         """

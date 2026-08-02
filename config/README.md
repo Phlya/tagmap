@@ -27,3 +27,19 @@ pulled from the trace file names via `sanger_name_regex`; sample-sheet columns
 fill in whatever the regex doesn't capture, or override it for a whole row.
 
 Both sheets take `#`-prefixed comment lines and blank rows.
+
+## Summary tables
+
+Besides the site calls, the workflow writes small TSV summaries to
+`stats_folder`, and assembles them into a single `report.md`:
+
+- `ngs_mapping_stats.tsv` - read pairs per NGS library, and how many were
+  anchored at an ITR primer (evidence of mobilization).
+- `ngs_site_sidedness.tsv` - insertion sites found from both sides of the
+  cassette versus only one, per NGS library.
+- `sanger_read_stats.tsv` / `sanger_fail_reasons.tsv` - Sanger reads per run
+  and primer direction, how many passed QC, and why the rest didn't.
+- `sanger_clone_summary.tsv` - per clone, whether the forward and reverse
+  primers each gave a confirmed site, failed QC, or were never sequenced.
+- `validation_summary.tsv` - Sanger sites confirmed by the NGS data, per run
+  and in total (only written when `validate_sanger_with_ngs` applies).

@@ -1,5 +1,6 @@
 localrules:
     combine_sanger_sites,
+    sanger_stats,
 
 
 rule ab1_to_fastq:
@@ -133,5 +134,28 @@ rule combine_sanger_sites:
         python3 {input.script} --sites {input.sites} \
             --max-dist {params.max_dist} {params.blacklist_arg} \
             -o {output.sites} --output-for-ucsc {output.for_ucsc} \
+            >{log[0]} 2>&1
+        """
+
+
+rule sanger_stats:
+    input:
+        reads=expand(f"{sanger_folder}/{{sample}}_reads.tsv", sample=sanger_sample_list),
+        script=f"{scripts_dir}/sanger_stats.py",
+    output:
+        reads=f"{stats_folder}/sanger_read_stats.tsv",
+        fail_reasons=f"{stats_folder}/sanger_fail_reasons.tsv",
+        clones=f"{stats_folder}/sanger_clone_summary.tsv",
+    log:
+        "logs/sanger_stats/log.log",
+    conda:
+        "../envs/all.yaml"
+    threads: 1
+    shell:
+        """
+        python3 {input.script} --reads {input.reads} \
+            --output-read-summary {output.reads} \
+            --output-fail-reasons {output.fail_reasons} \
+            --output-clone-summary {output.clones} \
             >{log[0]} 2>&1
         """

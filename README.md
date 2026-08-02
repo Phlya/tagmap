@@ -25,6 +25,11 @@ cross-validated against the NGS data (`validate_sanger_with_ngs`): a Sanger
 read that only worked from one ITR primer can still be trusted if the NGS
 library shows an insertion at the same position from both sides.
 
+Alongside the site calls, the workflow writes a set of summary tables to
+`stats_folder` - NGS mobilization rate and insertion-site sidedness, Sanger
+read/QC counts and per-clone forward/reverse coverage, and the
+Sanger-vs-NGS validation outcome - and assembles them into one `report.md`.
+
 ## Usage
 
 See `config/README.md` for how to configure the workflow, and
