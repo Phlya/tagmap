@@ -89,3 +89,5 @@ peaks_folder: '../Data/Processed/T1/peaks/'
 insertion_sites_folder: '../Data/Processed/T1/insertion_sites/'
 sanger_folder: '../Data/Processed/T1/sanger/'
 validation_folder: '../Data/Processed/T1/validation/'
+# Summary tables and the combined report.md
+stats_folder: '../Data/Processed/T1/stats/'

@@ -136,3 +136,39 @@ def write_bed(df, path, columns=None, track_name=None, header=False):
             f.write(f"track name={track_name}\n")
         mode = "a"
     df[columns].to_csv(path, sep="\t", index=False, header=header, mode=mode)
+
+
+def to_bool(series):
+    """Parse a True/False column that survived a round trip through a TSV.
+
+    to_csv writes booleans as the strings 'True'/'False' and pandas.NA as an
+    empty field, none of which astype(bool) handles correctly on reload
+    (every non-empty string, including 'False', is truthy). Unresolved/empty
+    values are treated as False, since here they mean "nothing to confirm
+    it" rather than an unknown true value.
+    """
+    return (
+        series.map({True: True, False: False, "True": True, "False": False})
+        .fillna(False)
+        .astype(bool)
+    )
+
+
+def to_markdown(df):
+    """A minimal GitHub-flavoured markdown table, without a tabulate dependency."""
+    columns = list(df.columns)
+    header = "| " + " | ".join(columns) + " |"
+    separator = "| " + " | ".join(["---"] * len(columns)) + " |"
+    lines = [header, separator]
+    for _, row in df.iterrows():
+        cells = [_format_cell(value) for value in row]
+        lines.append("| " + " | ".join(cells) + " |")
+    return "\n".join(lines) + "\n"
+
+
+def _format_cell(value):
+    if pd.isna(value):
+        return ""
+    if isinstance(value, float):
+        return f"{value:.3g}"
+    return str(value)

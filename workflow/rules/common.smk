@@ -24,6 +24,7 @@ peaks_folder = normpath(config["peaks_folder"])
 insertion_sites_folder = normpath(config["insertion_sites_folder"])
 sanger_folder = normpath(config["sanger_folder"])
 validation_folder = normpath(config["validation_folder"])
+stats_folder = normpath(config["stats_folder"])
 
 chromsizes = pd.read_table(
     config["chrom_sizes_path"],
@@ -215,17 +216,24 @@ def workflow_targets():
         targets += [
             f"{peaks_folder}/all_peaks.bed",
             f"{insertion_sites_folder}/all_sites.bed",
+            f"{stats_folder}/ngs_qc_stats.tsv",
         ]
     if sanger_sample_list:
         targets += expand(
             f"{sanger_folder}/{{sample}}_reads.tsv", sample=sanger_sample_list
         )
-        targets += [f"{sanger_folder}/all_sanger_sites.bed"]
+        targets += [
+            f"{sanger_folder}/all_sanger_sites.bed",
+            f"{stats_folder}/sanger_qc_stats.tsv",
+            f"{stats_folder}/sanger_clone_summary.tsv",
+        ]
     if do_validation:
         targets += [
             f"{validation_folder}/sanger_vs_ngs.tsv",
             f"{validation_folder}/confirmed_sites.bed",
+            f"{stats_folder}/validation_summary.tsv",
         ]
+    targets += [f"{stats_folder}/report.md"]
     return targets
 
 

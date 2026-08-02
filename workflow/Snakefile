@@ -44,3 +44,6 @@ if sanger_sample_list:
 if do_validation:
 
     include: "rules/validation.smk"
+
+
+include: "rules/report.smk"

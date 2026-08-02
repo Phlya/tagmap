@@ -1,3 +1,7 @@
+localrules:
+    ngs_stats,
+
+
 rule for_ucsc:
     input:
         bg=f"{coverage_folder}/{{sample}}_{{side}}_coverage.bedgraph",
@@ -46,5 +50,25 @@ rule find_insertion_sites:
             --genome {input.genome} --genome-index {input.genome_index} \
             --insertion-seq {params.insertion_seq} \
             -o {output.output} --output-for-ucsc {output.for_ucsc} \
+            >{log[0]} 2>&1
+        """
+
+
+rule ngs_stats:
+    input:
+        stats=expand(f"{pairs_folder}/{{sample}}_stats.yml", sample=sample_list),
+        sites=f"{insertion_sites_folder}/all_sites.bed",
+        script=f"{scripts_dir}/ngs_stats.py",
+    output:
+        f"{stats_folder}/ngs_qc_stats.tsv",
+    log:
+        "logs/ngs_stats/log.log",
+    conda:
+        "../envs/all.yaml"
+    threads: 1
+    shell:
+        """
+        python3 {input.script} --stats-yml {input.stats} --sites {input.sites} \
+            -o {output} \
             >{log[0]} 2>&1
         """
