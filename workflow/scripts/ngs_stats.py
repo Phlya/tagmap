@@ -1,10 +1,9 @@
-"""Summarise NGS mobilization rates and insertion-site sidedness.
+"""Summarise NGS mobilization rate and insertion-site sidedness per library.
 
-Turns the per-sample pairtools stats.yml files into one table of how many
-read pairs from each library actually captured a transposition event -
-anchored at an ITR primer, rather than just mapping anywhere - and turns the
-combined insertion sites file into a second table of how many of those sites
-were seen from both sides of the cassette versus only one.
+One row per NGS library, combining how many read pairs actually captured a
+transposition event - anchored at an ITR primer, rather than just mapping
+anywhere - with how many of the resulting insertion sites were seen from both
+sides of the cassette versus only one.
 """
 
 import argparse
@@ -16,8 +15,7 @@ import yaml
 argparser = argparse.ArgumentParser(description=__doc__)
 argparser.add_argument("--stats-yml", nargs="*", default=[])
 argparser.add_argument("--sites", required=True, help="all_sites.bed")
-argparser.add_argument("--output-mapping", "-o", required=True)
-argparser.add_argument("--output-sidedness", required=True)
+argparser.add_argument("--output", "-o", required=True)
 args = argparser.parse_args()
 
 MAPPING_COLUMNS = [
@@ -40,6 +38,8 @@ SIDEDNESS_COLUMNS = [
     "n_forward_only",
     "n_reverse_only",
 ]
+
+QC_COLUMNS = MAPPING_COLUMNS + SIDEDNESS_COLUMNS[1:]
 
 
 def sample_name_from_path(path):
@@ -69,7 +69,8 @@ for path in args.stats_yml:
     )
 
 mapping = pd.DataFrame(rows, columns=MAPPING_COLUMNS).sort_values("sample_name")
-mapping.to_csv(args.output_mapping, sep="\t", index=False)
+
+int_columns = ["n_sites", "n_two_sided", "n_one_sided", "n_forward_only", "n_reverse_only"]
 
 sites = pd.read_csv(args.sites, sep="\t", dtype={"chrom": str})
 
@@ -100,14 +101,18 @@ else:
     )
     # groupby.apply returns one Series per group; mixing ints and the float
     # frac_two_sided in that Series forces the whole thing to float64.
-    int_columns = ["n_sites", "n_two_sided", "n_one_sided", "n_forward_only", "n_reverse_only"]
     sidedness[int_columns] = sidedness[int_columns].astype(int)
 
-sidedness.to_csv(args.output_sidedness, sep="\t", index=False)
+# A library with no insertion sites has no row in sidedness at all, rather
+# than a row of zeros - fill that in instead of leaving it blank.
+qc = mapping.merge(sidedness, on="sample_name", how="left")
+qc[int_columns] = qc[int_columns].fillna(0).astype(int)
+qc = qc[QC_COLUMNS]
+qc.to_csv(args.output, sep="\t", index=False)
 
 print(
-    f"{mapping.shape[0]} NGS samples: "
-    f"{int(mapping['mobilized_pairs'].sum()) if mapping.shape[0] else 0} mobilized pairs; "
-    f"{sidedness['n_sites'].sum() if sidedness.shape[0] else 0} insertion sites, "
-    f"{sidedness['n_two_sided'].sum() if sidedness.shape[0] else 0} seen from both sides"
+    f"{qc.shape[0]} NGS samples: "
+    f"{int(qc['mobilized_pairs'].sum()) if qc.shape[0] else 0} mobilized pairs; "
+    f"{int(qc['n_sites'].sum()) if qc.shape[0] else 0} insertion sites, "
+    f"{int(qc['n_two_sided'].sum()) if qc.shape[0] else 0} seen from both sides"
 )

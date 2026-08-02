@@ -216,8 +216,7 @@ def workflow_targets():
         targets += [
             f"{peaks_folder}/all_peaks.bed",
             f"{insertion_sites_folder}/all_sites.bed",
-            f"{stats_folder}/ngs_mapping_stats.tsv",
-            f"{stats_folder}/ngs_site_sidedness.tsv",
+            f"{stats_folder}/ngs_qc_stats.tsv",
         ]
     if sanger_sample_list:
         targets += expand(
@@ -225,8 +224,7 @@ def workflow_targets():
         )
         targets += [
             f"{sanger_folder}/all_sanger_sites.bed",
-            f"{stats_folder}/sanger_read_stats.tsv",
-            f"{stats_folder}/sanger_fail_reasons.tsv",
+            f"{stats_folder}/sanger_qc_stats.tsv",
             f"{stats_folder}/sanger_clone_summary.tsv",
         ]
     if do_validation:

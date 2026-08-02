@@ -1,11 +1,13 @@
-"""Summarise Sanger sequencing coverage and QC outcomes per clone.
+"""Summarise Sanger sequencing QC and per-clone coverage.
 
 Reads that pass QC already end up in the per-clone consensus sites
 (combine_sanger_sites.py), but a read that failed, or a primer direction that
 was never sequenced for a clone, simply has no site to show for it - so
 "missing" and "failed" look the same downstream. This works from the raw
 per-read tables instead, which keep both, and reports for every clone whether
-each ITR primer's direction is confirmed, failed QC, or was never attempted.
+each ITR primer's direction is confirmed, failed QC, or was never attempted -
+and, when NGS data for the same material is available, whether that clone's
+site was independently confirmed there too.
 """
 
 import argparse
@@ -16,21 +18,22 @@ import tagmaplib
 
 argparser = argparse.ArgumentParser(description=__doc__)
 argparser.add_argument("--reads", nargs="*", default=[], help="{sample}_reads.tsv files")
-argparser.add_argument("--output-read-summary", required=True)
-argparser.add_argument("--output-fail-reasons", required=True)
+argparser.add_argument(
+    "--validation", default=None, help="sanger_vs_ngs.tsv, if NGS data is available"
+)
+argparser.add_argument("--output-qc", required=True)
 argparser.add_argument("--output-clone-summary", required=True)
 args = argparser.parse_args()
 
-READ_SUMMARY_COLUMNS = [
+QC_COLUMNS = [
     "sample_name",
     "direction",
     "n_reads",
     "n_pass",
     "n_fail",
     "frac_pass",
+    "fail_reasons",
 ]
-
-FAIL_REASON_COLUMNS = ["direction", "reason", "n_reads"]
 
 CLONE_COLUMNS = [
     "clone",
@@ -42,6 +45,8 @@ CLONE_COLUMNS = [
     "both_sides_confirmed",
     "summary",
 ]
+
+CLONE_VALIDATION_COLUMNS = ["ngs_validated", "ngs_side"]
 
 
 def classify(direction_reads):
@@ -70,9 +75,27 @@ def describe(forward_status, reverse_status):
     return f"neither confirmed (forward: {forward_status}, reverse: {reverse_status})"
 
 
+def fail_reason_summary(group):
+    """'reason (n); reason (n)', most common first, for one failed group."""
+    counts = group["reason"].value_counts()
+    return "; ".join(f"{reason} ({n})" for reason, n in counts.items())
+
+
+def summarize_clone_validation(group):
+    """Whether a clone's Sanger site was independently confirmed by NGS, and
+    which side(s) of the NGS insertion site did the confirming."""
+    confirmed = group[group["confirmed_by_ngs"]]
+    sides = sorted(confirmed["ngs_site_sides"].dropna().unique())
+    return pd.Series(
+        {
+            "ngs_validated": bool(confirmed.shape[0]),
+            "ngs_side": ", ".join(sides) if sides else pd.NA,
+        }
+    )
+
+
 if not args.reads:
-    read_summary = pd.DataFrame(columns=READ_SUMMARY_COLUMNS)
-    fail_reasons = pd.DataFrame(columns=FAIL_REASON_COLUMNS)
+    qc = pd.DataFrame(columns=QC_COLUMNS)
     clone_summary = pd.DataFrame(columns=CLONE_COLUMNS)
 else:
     reads = pd.concat(
@@ -82,8 +105,7 @@ else:
     reads["pass"] = tagmaplib.to_bool(reads["pass"])
 
     if reads.shape[0] == 0:
-        read_summary = pd.DataFrame(columns=READ_SUMMARY_COLUMNS)
-        fail_reasons = pd.DataFrame(columns=FAIL_REASON_COLUMNS)
+        qc = pd.DataFrame(columns=QC_COLUMNS)
         clone_summary = pd.DataFrame(columns=CLONE_COLUMNS)
     else:
 
@@ -99,17 +121,14 @@ else:
                 }
             )
 
-        read_summary = (
+        qc = (
             reads.groupby(["sample_name", "direction"])
             .apply(summarize_reads, include_groups=False)
-            .reset_index()[READ_SUMMARY_COLUMNS]
-            .sort_values(["sample_name", "direction"])
+            .reset_index()
         )
         # groupby.apply returns one Series per group; mixing ints and the
         # float frac_pass in that Series forces the whole thing to float64.
-        read_summary[["n_reads", "n_pass", "n_fail"]] = read_summary[
-            ["n_reads", "n_pass", "n_fail"]
-        ].astype(int)
+        qc[["n_reads", "n_pass", "n_fail"]] = qc[["n_reads", "n_pass", "n_fail"]].astype(int)
 
         failed = reads[~reads["pass"]].copy()
         failed["fail_reason"] = failed["fail_reason"].fillna("unknown").astype(str)
@@ -117,12 +136,18 @@ else:
         exploded = failed.assign(reason=failed["fail_reason"].str.split("; ")).explode(
             "reason"
         )
-        fail_reasons = (
-            exploded.groupby(["direction", "reason"])
-            .size()
-            .reset_index(name="n_reads")[FAIL_REASON_COLUMNS]
-            .sort_values(["direction", "n_reads"], ascending=[True, False])
-        )
+        if exploded.shape[0]:
+            fail_reasons = (
+                exploded.groupby(["sample_name", "direction"])
+                .apply(fail_reason_summary, include_groups=False)
+                .reset_index(name="fail_reasons")
+            )
+        else:
+            fail_reasons = pd.DataFrame(columns=["sample_name", "direction", "fail_reasons"])
+
+        qc = qc.merge(fail_reasons, on=["sample_name", "direction"], how="left")
+        qc["fail_reasons"] = qc["fail_reasons"].fillna("")
+        qc = qc[QC_COLUMNS].sort_values(["sample_name", "direction"])
 
         def summarize_clone(group):
             forward = group[group["direction"] == "forward"]
@@ -155,8 +180,22 @@ else:
             "both_sides_confirmed"
         ].astype(bool)
 
-read_summary.to_csv(args.output_read_summary, sep="\t", index=False)
-fail_reasons.to_csv(args.output_fail_reasons, sep="\t", index=False)
+if args.validation is not None:
+    validation = pd.read_csv(args.validation, sep="\t", dtype={"chrom": str})
+    if validation.shape[0] and "confirmed_by_ngs" in validation.columns:
+        validation["confirmed_by_ngs"] = tagmaplib.to_bool(validation["confirmed_by_ngs"])
+        clone_validation = (
+            validation.groupby("clone")
+            .apply(summarize_clone_validation, include_groups=False)
+            .reset_index()
+        )
+    else:
+        clone_validation = pd.DataFrame(columns=["clone"] + CLONE_VALIDATION_COLUMNS)
+    clone_summary = clone_summary.merge(clone_validation, on="clone", how="left")
+    clone_summary["ngs_validated"] = clone_summary["ngs_validated"].fillna(False).astype(bool)
+    clone_summary = clone_summary[CLONE_COLUMNS + CLONE_VALIDATION_COLUMNS]
+
+qc.to_csv(args.output_qc, sep="\t", index=False)
 clone_summary.to_csv(args.output_clone_summary, sep="\t", index=False)
 
 print(

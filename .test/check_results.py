@@ -71,43 +71,46 @@ check(
 )
 
 # The new stats/ tables should agree with what the checks above already
-# established directly from the site files.
-ngs_sidedness = pd.read_csv("results/stats/ngs_site_sidedness.tsv", sep="\t")
-clone1_sidedness = ngs_sidedness[ngs_sidedness["sample_name"] == "clone1"]
+# established directly from the site files. NGS mobilization and sidedness
+# are now combined into one file, keyed by sample_name.
+ngs_qc = pd.read_csv("results/stats/ngs_qc_stats.tsv", sep="\t")
+clone1_qc = ngs_qc[ngs_qc["sample_name"] == "clone1"]
 check(
-    clone1_sidedness.shape[0] == 1
-    and clone1_sidedness["n_sites"].iloc[0] == EXPECTED.shape[0]
-    and clone1_sidedness["n_two_sided"].iloc[0] == EXPECTED.shape[0]
-    and clone1_sidedness["n_one_sided"].iloc[0] == 0,
-    "ngs_site_sidedness.tsv should show both sites as two-sided for clone1",
-)
-
-ngs_mapping = pd.read_csv("results/stats/ngs_mapping_stats.tsv", sep="\t")
-clone1_mapping = ngs_mapping[ngs_mapping["sample_name"] == "clone1"]
-check(
-    clone1_mapping.shape[0] == 1 and clone1_mapping["mobilized_pairs"].iloc[0] > 0,
-    "ngs_mapping_stats.tsv should show mobilized pairs for clone1",
+    clone1_qc.shape[0] == 1
+    and clone1_qc["mobilized_pairs"].iloc[0] > 0
+    and clone1_qc["n_sites"].iloc[0] == EXPECTED.shape[0]
+    and clone1_qc["n_two_sided"].iloc[0] == EXPECTED.shape[0]
+    and clone1_qc["n_one_sided"].iloc[0] == 0,
+    "ngs_qc_stats.tsv should show mobilized pairs and both sites two-sided for clone1",
 )
 
 # A01 was sequenced from both primers, B01 only ever had a forward read - the
 # reverse primer was never attempted for it, rather than attempted and failed.
+# Both clones' sites matched a two-sided NGS site (checked above), so NGS
+# validation should say "both" for either, regardless of which side Sanger saw.
 sanger_clones = pd.read_csv("results/stats/sanger_clone_summary.tsv", sep="\t")
 a01 = sanger_clones[sanger_clones["clone"] == "A01"]
 check(
     a01.shape[0] == 1
     and bool(a01["both_sides_confirmed"].iloc[0])
     and a01["forward_status"].iloc[0] == "confirmed"
-    and a01["reverse_status"].iloc[0] == "confirmed",
-    "sanger_clone_summary.tsv should show clone A01 confirmed from both primers",
+    and a01["reverse_status"].iloc[0] == "confirmed"
+    and bool(a01["ngs_validated"].iloc[0])
+    and a01["ngs_side"].iloc[0] == "both",
+    "sanger_clone_summary.tsv should show clone A01 confirmed from both "
+    "primers and validated by a two-sided NGS site",
 )
 b01 = sanger_clones[sanger_clones["clone"] == "B01"]
 check(
     b01.shape[0] == 1
     and not bool(b01["both_sides_confirmed"].iloc[0])
     and b01["forward_status"].iloc[0] == "confirmed"
-    and b01["reverse_status"].iloc[0] == "no data",
+    and b01["reverse_status"].iloc[0] == "no data"
+    and bool(b01["ngs_validated"].iloc[0])
+    and b01["ngs_side"].iloc[0] == "both",
     "sanger_clone_summary.tsv should show clone B01 confirmed forward-only, "
-    "with the reverse primer never attempted",
+    "with the reverse primer never attempted, but still validated by a "
+    "two-sided NGS site",
 )
 
 validation_summary = pd.read_csv("results/stats/validation_summary.tsv", sep="\t")

@@ -7,10 +7,8 @@ import pandas as pd
 import tagmaplib
 
 argparser = argparse.ArgumentParser(description=__doc__)
-argparser.add_argument("--ngs-mapping", default=None)
-argparser.add_argument("--ngs-sidedness", default=None)
-argparser.add_argument("--sanger-reads", default=None)
-argparser.add_argument("--sanger-fail-reasons", default=None)
+argparser.add_argument("--ngs-qc", default=None)
+argparser.add_argument("--sanger-qc", default=None)
 argparser.add_argument("--sanger-clones", default=None)
 argparser.add_argument("--validation", default=None)
 argparser.add_argument("--output", "-o", required=True)
@@ -18,34 +16,28 @@ args = argparser.parse_args()
 
 SECTIONS = [
     (
-        "ngs_mapping",
-        "NGS mobilization",
-        "Read pairs per library, and how many were anchored at an ITR primer - "
-        "the evidence that a pair actually captured a transposition event.",
+        "ngs_qc",
+        "NGS QC",
+        "Per library: read pairs anchored at an ITR primer (evidence of "
+        "mobilization), and how many of the resulting insertion sites were "
+        "seen from both sides of the cassette versus only one - a one-sided "
+        "site is weaker evidence, since it has not been confirmed by an "
+        "independent primer.",
     ),
     (
-        "ngs_sidedness",
-        "NGS insertion site sidedness",
-        "Insertion sites found from both sides of the cassette versus only one. "
-        "A one-sided site is weaker evidence, since it has not been confirmed by "
-        "an independent primer.",
-    ),
-    (
-        "sanger_reads",
-        "Sanger reads",
-        "Sanger reads per run and ITR primer direction, and how many passed QC.",
-    ),
-    (
-        "sanger_fail_reasons",
-        "Sanger QC failure reasons",
-        "Why the reads above that did not pass QC failed.",
+        "sanger_qc",
+        "Sanger QC",
+        "Sanger reads per run and ITR primer direction: how many passed QC, "
+        "and why the rest didn't.",
     ),
     (
         "sanger_clones",
         "Sanger clones",
         "For each clone, whether the integration site was confirmed from the "
         "forward primer, the reverse primer, both, or neither - and whether an "
-        "unconfirmed side failed QC or was simply never sequenced.",
+        "unconfirmed side failed QC or was simply never sequenced. Where NGS "
+        "data for the same material is available, also whether that clone's "
+        "site was independently confirmed there, and from which side(s).",
     ),
     (
         "validation",

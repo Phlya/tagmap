@@ -141,21 +141,24 @@ rule combine_sanger_sites:
 rule sanger_stats:
     input:
         reads=expand(f"{sanger_folder}/{{sample}}_reads.tsv", sample=sanger_sample_list),
+        validation=f"{validation_folder}/sanger_vs_ngs.tsv" if do_validation else [],
         script=f"{scripts_dir}/sanger_stats.py",
     output:
-        reads=f"{stats_folder}/sanger_read_stats.tsv",
-        fail_reasons=f"{stats_folder}/sanger_fail_reasons.tsv",
+        qc=f"{stats_folder}/sanger_qc_stats.tsv",
         clones=f"{stats_folder}/sanger_clone_summary.tsv",
     log:
         "logs/sanger_stats/log.log",
     conda:
         "../envs/all.yaml"
     threads: 1
+    params:
+        validation_arg=lambda wildcards, input: (
+            f"--validation {input.validation}" if input.validation else ""
+        ),
     shell:
         """
-        python3 {input.script} --reads {input.reads} \
-            --output-read-summary {output.reads} \
-            --output-fail-reasons {output.fail_reasons} \
+        python3 {input.script} --reads {input.reads} {params.validation_arg} \
+            --output-qc {output.qc} \
             --output-clone-summary {output.clones} \
             >{log[0]} 2>&1
         """
