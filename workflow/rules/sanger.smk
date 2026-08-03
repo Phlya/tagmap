@@ -1,5 +1,6 @@
 localrules:
     combine_sanger_sites,
+    sanger_stats,
 
 
 rule ab1_to_fastq:
@@ -133,5 +134,31 @@ rule combine_sanger_sites:
         python3 {input.script} --sites {input.sites} \
             --max-dist {params.max_dist} {params.blacklist_arg} \
             -o {output.sites} --output-for-ucsc {output.for_ucsc} \
+            >{log[0]} 2>&1
+        """
+
+
+rule sanger_stats:
+    input:
+        reads=expand(f"{sanger_folder}/{{sample}}_reads.tsv", sample=sanger_sample_list),
+        validation=f"{validation_folder}/sanger_vs_ngs.tsv" if do_validation else [],
+        script=f"{scripts_dir}/sanger_stats.py",
+    output:
+        qc=f"{stats_folder}/sanger_qc_stats.tsv",
+        clones=f"{stats_folder}/sanger_clone_summary.tsv",
+    log:
+        "logs/sanger_stats/log.log",
+    conda:
+        "../envs/all.yaml"
+    threads: 1
+    params:
+        validation_arg=lambda wildcards, input: (
+            f"--validation {input.validation}" if input.validation else ""
+        ),
+    shell:
+        """
+        python3 {input.script} --reads {input.reads} {params.validation_arg} \
+            --output-qc {output.qc} \
+            --output-clone-summary {output.clones} \
             >{log[0]} 2>&1
         """

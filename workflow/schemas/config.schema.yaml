@@ -286,6 +286,12 @@ properties:
   validation_folder:
     type: string
     description: Defaults to "{results_folder}/validation".
+  stats_folder:
+    type: string
+    description: >
+      Summary tables (mobilization rate, site sidedness, Sanger QC, per-clone
+      coverage, cross-validation) and the combined report.md. Defaults to
+      "{results_folder}/stats".
   primer_position_file:
     type: string
     description: Defaults to "{results_folder}/primer_positions.json".

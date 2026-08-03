@@ -73,9 +73,13 @@ if __name__ == "__main__":
 
     sanger = pd.read_csv(args.sanger, sep="\t", dtype={"chrom": str})
     ngs_sites = pd.read_csv(args.ngs_sites, sep="\t", dtype={"chrom": str})
+    if "site_sides" in ngs_sites.columns:
+        # Renamed so the nearest() lookup below produces "ngs_site_sides"
+        # rather than the doubled-up "ngs_site_site_sides".
+        ngs_sites = ngs_sites.rename(columns={"site_sides": "sides"})
     ngs_peaks = tagmaplib.read_peaks(args.ngs_peaks)
 
-    site_columns = ["strand", "score"]
+    site_columns = ["strand", "score", "sides"]
     peak_columns = ["side", "count"]
 
     if sanger.shape[0] == 0:

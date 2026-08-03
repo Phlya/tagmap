@@ -36,3 +36,20 @@ default to living under `results_folder` (itself defaulting to `results`), so
 usually just setting `results_folder` is enough to get a self-contained,
 namespaced results tree - only override an individual path if you want that
 one file somewhere else.
+
+## Summary tables
+
+Besides the site calls, the workflow writes small TSV summaries to
+`stats_folder`, and assembles them into a single `report.md`:
+
+- `ngs_qc_stats.tsv` - per NGS library: read pairs anchored at an ITR primer
+  (evidence of mobilization), and how many of the resulting insertion sites
+  were seen from both sides of the cassette versus only one.
+- `sanger_qc_stats.tsv` - Sanger reads per run and primer direction, how many
+  passed QC, and a summary of why the rest didn't.
+- `sanger_clone_summary.tsv` - per clone, whether the forward and reverse
+  primers each gave a confirmed site, failed QC, or were never sequenced, and
+  - when NGS data for the same material is available - whether that clone's
+  site was independently confirmed there, and from which side(s).
+- `validation_summary.tsv` - Sanger sites confirmed by the NGS data, per run
+  and in total (only written when `validate_sanger_with_ngs` applies).
