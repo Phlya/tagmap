@@ -174,6 +174,7 @@ rule stats:
     input:
         pairs=f"{pairs_folder}/{{sample}}_sorted.pairs",
         primer_positions=config["primer_position_file"],
+        chromsizes=config["chrom_sizes_path"],
     output:
         stats=f"{pairs_folder}/{{sample}}_stats.yml",
     log:
@@ -204,6 +205,7 @@ rule dedup:
     input:
         pairs=f"{pairs_folder}/{{sample}}_sorted.pairs",
         primer_positions=config["primer_position_file"],
+        chromsizes=config["chrom_sizes_path"],
     output:
         pairs=f"{pairs_folder}/{{sample}}_dupmarked.pairs",
         stats=f"{pairs_folder}/{{sample}}_stats.yml",
@@ -242,6 +244,7 @@ rule get_trans_side_pairs:
             else f"{pairs_folder}/{{sample}}_sorted.pairs"
         ),
         primer_positions=config["primer_position_file"],
+        chromsizes=config["chrom_sizes_path"],
     output:
         f"{pairs_folder}/{{sample}}_{{side}}.pairs",
     log:
