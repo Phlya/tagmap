@@ -24,16 +24,11 @@ mapper: 'bwa-mem2'
 dedup: True
 
 cassette_name: 'mobilized_enhancer'
-# Further contigs of the reference that belong to the construct rather than the
-# genome, e.g. a second cassette. Never reported as integration sites.
-construct_contigs: []
 # Sequence of the primers used to amplify the cassette
 # If multiple PCRs were used, use the sequence of the primers used in the last step
 # Please only specify the portion of the primers that binds the ITRs
 forward_primer_sequence: 'GTACGTCACAATATGATTATCTTTCTAG'
 reverse_primer_sequence: 'CGTCAATTTTACGCAGACTATC'
-# 5' overhang of the primers above, likely Nextera N7 sequence
-# primer_overhang: 'GTCTCGTGGGCTCGGAGATGTGTATAAGAGACAG'
 # Sequence of the adapters loaded onto Tn5 transposase, likely Nextera N5 sequence
 # Not used at the moment
 # adapter_seq: 'TCGTCGGCAGCGTCAGATGTGTATAAGAGACAG'
@@ -115,6 +110,14 @@ sanger_direction_map:
   rev: reverse
 # Reads of one clone this close together are one integration site
 sanger_max_dist: 100
+
+# Where the original, pre-mobilization insertion sits (e.g. an unmobilized
+# founder line's cassette locus). A clone whose confirmed Sanger site lands
+# here is classified as unmobilized rather than confirmed. Give either of
+# these, not both; leave both unset to skip the check.
+# original_insertion_site: 'chr11:12345678'
+# original_insertion_upstream_seq: 'GATTACAGATTACAGATTACA'
+original_insertion_max_dist: 25
 
 # Compare Sanger sites against NGS sites and peaks. Only has an effect when
 # both sample sheets are given. Useful when Sanger sequencing only worked from

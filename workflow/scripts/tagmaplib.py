@@ -7,7 +7,6 @@ script's own directory on ``sys.path``, so no installation is needed.
 
 import numpy as np
 import pandas as pd
-import pysam
 from pairtools.lib import fileio, headerops
 
 # Columns of the per-sample peak files written by combine_peaks.py and
@@ -147,6 +146,8 @@ def find_insertion_seq(df, genome, ins_seq, window=0, mode="first", index_file=N
     Callers decide what to do with the result, because the NGS and Sanger
     branches report insertion sites with different widths.
     """
+    import pysam
+
     ins_seq = ins_seq.upper()
     result = pd.Series(-1, index=df.index, dtype=int)
     if df.shape[0] == 0:

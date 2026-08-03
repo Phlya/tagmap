@@ -40,6 +40,7 @@ for _key, _subpath in {
     "validation_folder": "validation",
     "stats_folder": "stats",
     "primer_position_file": "primer_positions.json",
+    "original_site_file": "original_site.json",
     "fasta_index_file": "refgen.fai",
 }.items():
     config.setdefault(_key, os.path.join(config["results_folder"], _subpath))
@@ -60,18 +61,34 @@ insertion_sites_folder = normpath(config["insertion_sites_folder"])
 sanger_folder = normpath(config["sanger_folder"])
 validation_folder = normpath(config["validation_folder"])
 stats_folder = normpath(config["stats_folder"])
+original_site_file = normpath(config["original_site_file"])
+
+# Two ways of pointing at the same pre-mobilization locus - see
+# original_insertion_site/original_insertion_upstream_seq in the schema.
+if config.get("original_insertion_site") and config.get(
+    "original_insertion_upstream_seq"
+):
+    raise ValueError(
+        "Only one of original_insertion_site and original_insertion_upstream_seq "
+        "should be given - they are two ways of specifying the same locus."
+    )
+has_original_site = bool(
+    config.get("original_insertion_site")
+    or config.get("original_insertion_upstream_seq")
+)
+
 
 @functools.cache
 def cassette_length():
     """Length of the cassette contig, in chrom_sizes_path.
 
-    Deferred rather than read as soon as the config is parsed (like
-    construct_contigs below), because chrom_sizes_path need not exist yet at
-    that point - the make_chromsizes rule can still be the one to build it,
-    as an ordinary dependency of whichever rule first calls this, rather than
-    something the user has to generate by hand before the DAG can even be
-    built. Sanger-only runs never call this at all, so for them
-    chrom_sizes_path need not exist on disk, only be set.
+    Deferred rather than read as soon as the config is parsed, because
+    chrom_sizes_path need not exist yet at that point - the make_chromsizes
+    rule can still be the one to build it, as an ordinary dependency of
+    whichever rule first calls this, rather than something the user has to
+    generate by hand before the DAG can even be built. Sanger-only runs never
+    call this at all, so for them chrom_sizes_path need not exist on disk,
+    only be set.
     """
     chromsizes = pd.read_table(
         config["chrom_sizes_path"],
@@ -87,11 +104,6 @@ def cassette_length():
             "the reference genome."
         )
     return chromsizes.loc[config["cassette_name"]]["size"]
-
-
-# Everything that is construct rather than genome, and so never a real
-# integration site.
-construct_contigs = [config["cassette_name"]] + list(config["construct_contigs"])
 
 
 # Depending on the mapper, the index files will be different
@@ -112,6 +124,8 @@ elif config["mapper"] == "bwa-meme":
         ".suffixarray_uint64_L1_PARAMETERS",
         ".suffixarray_uint64_L2_PARAMETERS",
     )
+elif config["mapper"] == "minibwa":
+    idx = multiext(refgen_path, ".mbw", ".l2b")
 
 
 def read_sample_sheet(path, schema):
@@ -292,7 +306,7 @@ def workflow_targets():
             f"{validation_folder}/confirmed_sites.bed",
             f"{stats_folder}/validation_summary.tsv",
         ]
-    targets += [f"{stats_folder}/report.md"]
+    targets += [f"{stats_folder}/report.md", f"{stats_folder}/report.pdf"]
     return targets
 
 

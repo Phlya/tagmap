@@ -88,29 +88,37 @@ check(
 # reverse primer was never attempted for it, rather than attempted and failed.
 # Both clones' sites matched a two-sided NGS site (checked above), so NGS
 # validation should say "both" for either, regardless of which side Sanger saw.
+# The test config also points original_insertion_site at A01's own planted
+# insertion (chr1:8000): A01 still has a real, confirmed site there (from
+# both primers, agreeing on position), it just happens to be the founder's
+# own locus, so it is both_sides_confirmed *and* unmobilized.
 sanger_clones = pd.read_csv("results/stats/sanger_clone_summary.tsv", sep="\t")
 a01 = sanger_clones[sanger_clones["clone"] == "A01"]
 check(
     a01.shape[0] == 1
     and bool(a01["both_sides_confirmed"].iloc[0])
-    and a01["forward_status"].iloc[0] == "confirmed"
-    and a01["reverse_status"].iloc[0] == "confirmed"
+    and a01["forward_status"].iloc[0] == "PASSED"
+    and a01["reverse_status"].iloc[0] == "PASSED"
+    and bool(a01["positions_agree"].iloc[0])
+    and bool(a01["unmobilized"].iloc[0])
     and bool(a01["ngs_validated"].iloc[0])
     and a01["ngs_side"].iloc[0] == "both",
     "sanger_clone_summary.tsv should show clone A01 confirmed from both "
-    "primers and validated by a two-sided NGS site",
+    "primers, agreeing on position, at the original insertion site "
+    "(unmobilized), and validated by a two-sided NGS site",
 )
 b01 = sanger_clones[sanger_clones["clone"] == "B01"]
 check(
     b01.shape[0] == 1
     and not bool(b01["both_sides_confirmed"].iloc[0])
-    and b01["forward_status"].iloc[0] == "confirmed"
-    and b01["reverse_status"].iloc[0] == "no data"
+    and b01["forward_status"].iloc[0] == "PASSED"
+    and b01["reverse_status"].iloc[0] == "not sequenced"
+    and not bool(b01["unmobilized"].iloc[0])
     and bool(b01["ngs_validated"].iloc[0])
     and b01["ngs_side"].iloc[0] == "both",
-    "sanger_clone_summary.tsv should show clone B01 confirmed forward-only, "
-    "with the reverse primer never attempted, but still validated by a "
-    "two-sided NGS site",
+    "sanger_clone_summary.tsv should show clone B01 confirmed forward-only at "
+    "a different (mobilized) locus, with the reverse primer never attempted, "
+    "but still validated by a two-sided NGS site",
 )
 
 validation_summary = pd.read_csv("results/stats/validation_summary.tsv", sep="\t")

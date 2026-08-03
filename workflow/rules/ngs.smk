@@ -60,37 +60,77 @@ rule trim:
         "v3.9.0/bio/fastp"
 
 
-rule bwamap:
-    input:
-        reads=(
-            [
-                f"{fastq_folder}/{{sample}}_trimmed.R1.fastq.gz",
-                f"{fastq_folder}/{{sample}}_trimmed.R2.fastq.gz",
-            ]
-            if config["trim"]
-            else [
-                f"{fastq_folder}/{{sample}}.R1.fastq.gz",
-                f"{fastq_folder}/{{sample}}.R2.fastq.gz",
-            ]
-        ),
-        reference=refgen_path,
-        idx=idx,
-    output:
-        f"{bams_folder}/{{sample}}.bam",
-    log:
-        "logs/bwa_memx/{sample}.log",
-    benchmark:
-        "benchmarks/bwa_memx/{sample}.tsv"
-    threads: 12
-    params:
-        bwa=config["mapper"],
-        sort="none",
-        dedup="none",
-        # Lower minimal alignment score for bwa-mem to increase sensitivity for
-        # short reads and short alignments
-        extra="-SP -T 30",
-    wrapper:
-        "v3.3.3/bio/bwa-memx/mem"
+if config["mapper"] == "minibwa":
+
+    rule minibwa_map:
+        input:
+            reads=(
+                [
+                    f"{fastq_folder}/{{sample}}_trimmed.R1.fastq.gz",
+                    f"{fastq_folder}/{{sample}}_trimmed.R2.fastq.gz",
+                ]
+                if config["trim"]
+                else [
+                    f"{fastq_folder}/{{sample}}.R1.fastq.gz",
+                    f"{fastq_folder}/{{sample}}.R2.fastq.gz",
+                ]
+            ),
+            reference=refgen_path,
+            idx=idx,
+        output:
+            f"{bams_folder}/{{sample}}.bam",
+        log:
+            "logs/bwa_memx/{sample}.log",
+        benchmark:
+            "benchmarks/bwa_memx/{sample}.tsv"
+        conda:
+            "../envs/minibwa.yaml"
+        threads: 12
+        params:
+            # --hic: independent mate mapping, no proper-pair assumption
+            # (equivalent to -5P) - matches the intent of the other mappers'
+            # -SP, since these are chimeric tagmentation fragments rather
+            # than conventional inserts.
+            extra="--hic -s 30",
+        shell:
+            """
+            minibwa map {params.extra} -t {threads} {input.reference} {input.reads} 2>{log[0]} \
+                | samtools view -b -o {output} - 2>>{log[0]}
+            """
+
+else:
+
+    rule bwamap:
+        input:
+            reads=(
+                [
+                    f"{fastq_folder}/{{sample}}_trimmed.R1.fastq.gz",
+                    f"{fastq_folder}/{{sample}}_trimmed.R2.fastq.gz",
+                ]
+                if config["trim"]
+                else [
+                    f"{fastq_folder}/{{sample}}.R1.fastq.gz",
+                    f"{fastq_folder}/{{sample}}.R2.fastq.gz",
+                ]
+            ),
+            reference=refgen_path,
+            idx=idx,
+        output:
+            f"{bams_folder}/{{sample}}.bam",
+        log:
+            "logs/bwa_memx/{sample}.log",
+        benchmark:
+            "benchmarks/bwa_memx/{sample}.tsv"
+        threads: 12
+        params:
+            bwa=config["mapper"],
+            sort="none",
+            dedup="none",
+            # Lower minimal alignment score for bwa-mem to increase sensitivity for
+            # short reads and short alignments
+            extra="-SP -T 30",
+        wrapper:
+            "v3.3.3/bio/bwa-memx/mem"
 
 
 rule parse2:
@@ -280,7 +320,7 @@ if config["peak_caller"] == "junction_tiered":
             min_peak_frac=config["min_peak_frac"],
             min_peak_dist=config["min_peak_dist"],
             min_peak_positions=config["min_peak_positions"],
-            ignore_chroms=" ".join(construct_contigs),
+            cassette_name=config["cassette_name"],
         shell:
             """
             python3 {input.script} -i {input.pairs} --side {wildcards.side} \
@@ -295,7 +335,7 @@ if config["peak_caller"] == "junction_tiered":
                 --min-peak-width {params.min_peak_width} --min-peak-frac {params.min_peak_frac} \
                 --min-peak-reads {params.min_peak_reads} --min-peak-dist {params.min_peak_dist} \
                 --min-peak-positions {params.min_peak_positions} \
-                --ignore-chrom {params.ignore_chroms} \
+                --ignore-chrom {params.cassette_name} \
                 >{log[0]} 2>&1
             """
 
@@ -326,7 +366,7 @@ else:
             min_peak_frac=config["min_peak_frac"],
             min_peak_dist=config["min_peak_dist"],
             min_peak_positions=config["min_peak_positions"],
-            ignore_chroms=" ".join(construct_contigs),
+            cassette_name=config["cassette_name"],
         shell:
             """
             python3 {input.script} -i {input.coverage} -o {output} \
@@ -334,7 +374,7 @@ else:
                 --min-peak-width {params.min_peak_width} --min-peak-frac {params.min_peak_frac} \
                 --min-peak-reads {params.min_peak_reads} --min-peak-dist {params.min_peak_dist} \
                 --min-peak-positions {params.min_peak_positions} \
-                --ignore-chrom {params.ignore_chroms} \
+                --ignore-chrom {params.cassette_name} \
                 >{log[0]} 2>&1
             """
 

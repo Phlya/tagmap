@@ -29,6 +29,9 @@ Alongside the site calls, the workflow writes a set of summary tables to
 `stats_folder` - NGS mobilization rate and insertion-site sidedness, Sanger
 read/QC counts and per-clone forward/reverse coverage, and the
 Sanger-vs-NGS validation outcome - and assembles them into one `report.md`.
+A founder/control clone that still carries the cassette at its original,
+pre-mobilization locus can be flagged as such (`original_insertion_site`),
+rather than counted as a new integration.
 
 ## Usage
 

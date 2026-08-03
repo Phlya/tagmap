@@ -50,6 +50,10 @@ Besides the site calls, the workflow writes small TSV summaries to
 - `sanger_clone_summary.tsv` - per clone, whether the forward and reverse
   primers each gave a confirmed site, failed QC, or were never sequenced, and
   - when NGS data for the same material is available - whether that clone's
-  site was independently confirmed there, and from which side(s).
+  site was independently confirmed there, and from which side(s). When
+  `original_insertion_site`/`original_insertion_upstream_seq` is configured, a
+  side whose site lands there instead of a new locus is classified
+  `unmobilized` rather than `confirmed`, and the clone gets an `unmobilized`
+  column.
 - `validation_summary.tsv` - Sanger sites confirmed by the NGS data, per run
   and in total (only written when `validate_sanger_with_ngs` applies).

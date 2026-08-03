@@ -18,15 +18,9 @@ mapper: 'bwa-mem2'
 dedup: False
 
 cassette_name: 'cassette'
-# Contigs of the reference that are construct rather than genome, so never
-# real integration sites. Without these the founder locus - which lives
-# inside the LacO cassette, not in mm10 - is reported as an insertion site.
-construct_contigs: ['flanks']
 
 reverse_primer_sequence: 'aacgagttttaatgactccaactt'
 forward_primer_sequence: 'ggtgatcctaactgacctaagac'
-primer_overhang: 'GTCTCGTGGGCTCGGAGATGTGTATAAGAGACAG'
-
 insertion_seq: "TA"
 
 peak_caller: 'coverage'

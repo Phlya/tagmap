@@ -88,7 +88,7 @@ rule sample_summary:
         "../envs/all.yaml"
     threads: 1
     params:
-        construct_contigs=" ".join(config["construct_contigs"]),
+        cassette_name=config["cassette_name"],
         max_dist_between_sides=config["max_dist_between_sides"],
         evidence_arg=lambda wildcards, input: (
             f"--evidence {' '.join(input.evidence)}" if input.evidence else ""
@@ -97,7 +97,7 @@ rule sample_summary:
         """
         python3 {input.script} --sites {input.sites} --peaks {input.peaks} \
             {params.evidence_arg} --coverage {input.coverage} \
-            --construct-contigs {params.construct_contigs} \
+            --construct-contigs {params.cassette_name} \
             --max-dist {params.max_dist_between_sides} \
             -o {output} >{log[0]} 2>&1
         """

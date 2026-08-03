@@ -25,17 +25,11 @@ mapper: 'bwa-mem2'
 dedup: True
 
 cassette_name: 'SB_cargo_CTCF'
-# Contigs of the reference that are construct rather than genome, so never
-# real integration sites. Without these the founder locus - which lives
-# inside the LacO cassette, not in mm10 - is reported as an insertion site.
-construct_contigs: ['mobilized_SB_LacO_cassette', 'TetO_3xCTCF_cassette']
 
 # Sequence of the primers used to amplify the cassette
 # If multiple PCRs were used, use the sequence of the primers used in the last step
 reverse_primer_sequence: 'aacgagttttaatgactccaactt'
 forward_primer_sequence: 'TCCTAACTGACCTAAGACAGG'
-# 5' overhang of the primers above, likely Nextera N7 sequence
-primer_overhang: 'GTCTCGTGGGCTCGGAGATGTGTATAAGAGACAG'
 
 # Sequence used by the transposon for integration; e.g. TA for SB, TTAA for PB
 insertion_seq: "TA"
