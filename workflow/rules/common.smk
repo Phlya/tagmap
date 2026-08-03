@@ -227,9 +227,7 @@ def get_filter(side, primer_positions_file):
     with open(primer_positions_file) as f:
         primer_positions = json.load(f)
     walk_pair_type = (
-        '(walk_pair_type in ["R1", "R2", "R1&2"]) and'
-        if only_read_junctions
-        else ""
+        '(walk_pair_type in ["R1", "R2", "R1&2"]) and' if only_read_junctions else ""
     )
     forward_ITR_primer_position = primer_positions["forward_ITR_primer_position"]
     reverse_ITR_primer_position = primer_positions["reverse_ITR_primer_position"]

@@ -355,12 +355,8 @@ else:
             "../envs/all.yaml"
         threads: 1
         params:
-            cluster_arg=(
-                "--no-cluster" if only_read_junctions else "--cluster"
-            ),
-            auto_li_arg=(
-                "--auto-li" if only_read_junctions else "--no-auto-li"
-            ),
+            cluster_arg=("--no-cluster" if only_read_junctions else "--cluster"),
+            auto_li_arg=("--auto-li" if only_read_junctions else "--no-auto-li"),
             min_peak_width=config["min_peak_width"],
             min_peak_reads=config["min_peak_reads"],
             min_peak_frac=config["min_peak_frac"],
