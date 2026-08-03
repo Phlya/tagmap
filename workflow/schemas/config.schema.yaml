@@ -37,15 +37,6 @@ properties:
   cassette_name:
     type: string
     description: Name of the cassette contig in refgen_path.
-  construct_contigs:
-    type: array
-    items:
-      type: string
-    default: []
-    description: >
-      Further contigs that are part of the construct rather than real
-      integration sites (e.g. a second cassette). Treated like cassette_name
-      when deciding which part of a Sanger read is genomic.
   forward_primer_sequence:
     type: string
     description: >
@@ -164,6 +155,29 @@ properties:
     type: integer
     default: 100
     description: Reads within this distance are collapsed into one site.
+  original_insertion_site:
+    type: string
+    description: >
+      chrom:pos (0-based) of the original, pre-mobilization insertion - e.g.
+      an unmobilized founder line's cassette locus. A clone whose confirmed
+      Sanger site falls within original_insertion_max_dist of this position
+      is classified as unmobilized rather than confirmed, since it never left
+      its starting locus. Give this or original_insertion_upstream_seq, not
+      both; leave both unset to skip the check.
+  original_insertion_upstream_seq:
+    type: string
+    description: >
+      Alternative to original_insertion_site: genome sequence immediately
+      upstream of the original insertion, as it reads on the reference's
+      forward strand. Must occur exactly once outside the cassette contig;
+      the workflow locates it once and uses the position right after the
+      match as the original insertion site.
+  original_insertion_max_dist:
+    type: integer
+    default: 25
+    description: >
+      Distance within which a Sanger site counts as being at the original
+      insertion (see original_insertion_site/original_insertion_upstream_seq).
 
   # ------------------------------------------------------------ validation --
   validate_sanger_with_ngs:
@@ -211,6 +225,13 @@ properties:
   primer_position_file:
     type: string
     default: "results/primer_positions.json"
+  original_site_file:
+    type: string
+    default: "results/original_site.json"
+    description: >
+      Resolved chrom/pos of the original insertion (see
+      original_insertion_site/original_insertion_upstream_seq). Only written
+      when one of those is set.
   fasta_index_file:
     type: string
     default: "results/refgen.fai"

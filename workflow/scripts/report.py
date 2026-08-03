@@ -37,7 +37,10 @@ SECTIONS = [
         "forward primer, the reverse primer, both, or neither - and whether an "
         "unconfirmed side failed QC or was simply never sequenced. Where NGS "
         "data for the same material is available, also whether that clone's "
-        "site was independently confirmed there, and from which side(s).",
+        "site was independently confirmed there, and from which side(s). "
+        "Where the original, pre-mobilization insertion is configured, a "
+        "clone whose site sits there instead of a new locus is flagged as "
+        "unmobilized rather than confirmed.",
     ),
     (
         "validation",

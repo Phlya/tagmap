@@ -67,7 +67,7 @@ rule sanger_sites:
         "../envs/all.yaml"
     threads: 1
     params:
-        construct_contigs=" ".join(construct_contigs),
+        cassette_name=config["cassette_name"],
         insertion_seq=config["insertion_seq"],
         min_mapq=config["sanger_min_mapq"],
         min_aligned=config["sanger_min_aligned"],
@@ -96,7 +96,7 @@ rule sanger_sites:
             --genome-index {input.genome_index} \
             --primer-positions {input.primer_positions} \
             --sample-name {wildcards.sample} \
-            --construct-contigs {params.construct_contigs} \
+            --construct-contigs {params.cassette_name} \
             --insertion-seq {params.insertion_seq} \
             --min-mapq {params.min_mapq} --min-aligned {params.min_aligned} \
             --max-unexplained {params.max_unexplained} \
@@ -142,6 +142,7 @@ rule sanger_stats:
     input:
         reads=expand(f"{sanger_folder}/{{sample}}_reads.tsv", sample=sanger_sample_list),
         validation=f"{validation_folder}/sanger_vs_ngs.tsv" if do_validation else [],
+        original_site=original_site_file if has_original_site else [],
         script=f"{scripts_dir}/sanger_stats.py",
     output:
         qc=f"{stats_folder}/sanger_qc_stats.tsv",
@@ -155,9 +156,14 @@ rule sanger_stats:
         validation_arg=lambda wildcards, input: (
             f"--validation {input.validation}" if input.validation else ""
         ),
+        original_site_arg=lambda wildcards, input: (
+            f"--original-site {input.original_site}" if input.original_site else ""
+        ),
+        max_dist=config["original_insertion_max_dist"],
     shell:
         """
         python3 {input.script} --reads {input.reads} {params.validation_arg} \
+            {params.original_site_arg} --original-max-dist {params.max_dist} \
             --output-qc {output.qc} \
             --output-clone-summary {output.clones} \
             >{log[0]} 2>&1
