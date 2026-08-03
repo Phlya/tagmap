@@ -1,0 +1,9 @@
+name: tagmap-report
+channels:
+  - conda-forge
+dependencies:
+  - python >=3.9
+  - pandas >=1.5
+  - pip
+  - pip:
+    - fpdf2>=2.7.6

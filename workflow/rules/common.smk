@@ -75,6 +75,8 @@ elif config["mapper"] == "bwa-meme":
         ".suffixarray_uint64_L1_PARAMETERS",
         ".suffixarray_uint64_L2_PARAMETERS",
     )
+elif config["mapper"] == "minibwa":
+    idx = multiext(refgen_path, ".mbw", ".l2b")
 
 
 def read_sample_sheet(path, schema):
@@ -244,7 +246,7 @@ def workflow_targets():
             f"{validation_folder}/confirmed_sites.bed",
             f"{stats_folder}/validation_summary.tsv",
         ]
-    targets += [f"{stats_folder}/report.md"]
+    targets += [f"{stats_folder}/report.md", f"{stats_folder}/report.pdf"]
     return targets
 
 

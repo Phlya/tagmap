@@ -29,9 +29,17 @@ properties:
       output for genome browsers, which do not know about the cassette.
   mapper:
     type: string
-    enum: ["bwa-mem", "bwa-mem2", "bwa-meme"]
+    enum: ["bwa-mem", "bwa-mem2", "bwa-meme", "minibwa"]
     default: "bwa-mem2"
-    description: From slowest/leanest to fastest/most memory hungry.
+    description: >
+      From slowest/leanest to fastest/most memory hungry. minibwa
+      (https://github.com/lh3/minibwa) is a newer, faster aligner that isn't
+      supported by the bwa-memx wrapper the other three use, so it's mapped
+      with its own rules: minibwa mem for the single-end Sanger reads,
+      minibwa map --hic for paired-end NGS reads (matching the -SP flags
+      used for the other mappers - independent mate mapping, no proper-pair
+      assumption, since these are chimeric tagmentation fragments rather
+      than conventional inserts).
 
   # -------------------------------------------------------------- cassette --
   cassette_name:
