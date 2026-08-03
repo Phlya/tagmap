@@ -1,18 +1,40 @@
-rule bwaindex:
-    input:
-        refgen_path,
-    output:
-        idx,
-    log:
-        "logs/bwa-memx_index/{}.log".format(
-            os.path.splitext(os.path.basename(refgen_path))[0]
-        ),
-    priority: 100
-    threads: 8  # Only affects bwa-meme
-    params:
-        bwa=config["mapper"],
-    wrapper:
-        "v3.8.0/bio/bwa-memx/index"
+if config["mapper"] == "minibwa":
+
+    rule minibwa_index:
+        input:
+            refgen_path,
+        output:
+            idx,
+        log:
+            "logs/minibwa_index/{}.log".format(
+                os.path.splitext(os.path.basename(refgen_path))[0]
+            ),
+        priority: 100
+        conda:
+            "../envs/minibwa.yaml"
+        threads: 8
+        shell:
+            """
+            minibwa index -t {threads} {input} >{log[0]} 2>&1
+            """
+
+else:
+
+    rule bwaindex:
+        input:
+            refgen_path,
+        output:
+            idx,
+        log:
+            "logs/bwa-memx_index/{}.log".format(
+                os.path.splitext(os.path.basename(refgen_path))[0]
+            ),
+        priority: 100
+        threads: 8  # Only affects bwa-meme
+        params:
+            bwa=config["mapper"],
+        wrapper:
+            "v3.8.0/bio/bwa-memx/index"
 
 
 rule fasta_index:

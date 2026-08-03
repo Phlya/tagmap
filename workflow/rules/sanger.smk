@@ -26,27 +26,55 @@ rule ab1_to_fastq:
         """
 
 
-rule sanger_map:
-    input:
-        reads=[f"{sanger_folder}/{{sample}}.fastq.gz"],
-        reference=refgen_path,
-        idx=idx,
-    output:
-        f"{sanger_folder}/{{sample}}.bam",
-    log:
-        "logs/sanger_map/{sample}.log",
-    benchmark:
-        "benchmarks/sanger_map/{sample}.tsv"
-    threads: 4
-    params:
-        bwa=config["mapper"],
-        # Unsorted: sanger_sites reads the file straight through, and sorting
-        # would only add a dependency.
-        sort="none",
-        dedup="none",
-        extra=config["sanger_map_args"],
-    wrapper:
-        "v3.3.3/bio/bwa-memx/mem"
+if config["mapper"] == "minibwa":
+
+    rule minibwa_sanger_map:
+        input:
+            reads=f"{sanger_folder}/{{sample}}.fastq.gz",
+            reference=refgen_path,
+            idx=idx,
+        output:
+            f"{sanger_folder}/{{sample}}.bam",
+        log:
+            "logs/sanger_map/{sample}.log",
+        benchmark:
+            "benchmarks/sanger_map/{sample}.tsv"
+        conda:
+            "../envs/minibwa.yaml"
+        threads: 4
+        params:
+            extra=config["sanger_map_args"],
+        shell:
+            # Unsorted: sanger_sites reads the file straight through, and
+            # sorting would only add a dependency.
+            """
+            minibwa mem -t {threads} {params.extra} {input.reference} {input.reads} 2>{log[0]} \
+                | samtools view -b -o {output} - 2>>{log[0]}
+            """
+
+else:
+
+    rule sanger_map:
+        input:
+            reads=[f"{sanger_folder}/{{sample}}.fastq.gz"],
+            reference=refgen_path,
+            idx=idx,
+        output:
+            f"{sanger_folder}/{{sample}}.bam",
+        log:
+            "logs/sanger_map/{sample}.log",
+        benchmark:
+            "benchmarks/sanger_map/{sample}.tsv"
+        threads: 4
+        params:
+            bwa=config["mapper"],
+            # Unsorted: sanger_sites reads the file straight through, and sorting
+            # would only add a dependency.
+            sort="none",
+            dedup="none",
+            extra=config["sanger_map_args"],
+        wrapper:
+            "v3.3.3/bio/bwa-memx/mem"
 
 
 rule sanger_sites:
