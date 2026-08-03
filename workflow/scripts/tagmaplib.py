@@ -7,7 +7,6 @@ script's own directory on ``sys.path``, so no installation is needed.
 
 import numpy as np
 import pandas as pd
-from pairtools.lib import fileio, headerops
 
 # Columns of the per-sample peak files written by combine_peaks.py and
 # concatenated into all_peaks.bed.
@@ -67,6 +66,8 @@ def normalise_junction_pos(pos, strand):
 
 def read_pairs(pairs, threads=1):
     """Read a .pairs file into a frame, plus the chromsizes from its header."""
+    from pairtools.lib import fileio, headerops
+
     pairs_stream = (
         fileio.auto_open(pairs, mode="r", nproc=threads)
         if isinstance(pairs, str)
