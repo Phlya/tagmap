@@ -25,6 +25,21 @@ insertion_sites_folder = normpath(config["insertion_sites_folder"])
 sanger_folder = normpath(config["sanger_folder"])
 validation_folder = normpath(config["validation_folder"])
 stats_folder = normpath(config["stats_folder"])
+original_site_file = normpath(config["original_site_file"])
+
+# Two ways of pointing at the same pre-mobilization locus - see
+# original_insertion_site/original_insertion_upstream_seq in the schema.
+if config.get("original_insertion_site") and config.get(
+    "original_insertion_upstream_seq"
+):
+    raise ValueError(
+        "Only one of original_insertion_site and original_insertion_upstream_seq "
+        "should be given - they are two ways of specifying the same locus."
+    )
+has_original_site = bool(
+    config.get("original_insertion_site")
+    or config.get("original_insertion_upstream_seq")
+)
 
 chromsizes = pd.read_table(
     config["chrom_sizes_path"],
@@ -40,10 +55,6 @@ if config["cassette_name"] not in chromsizes.index:
         "the reference genome."
     )
 cassette_length = chromsizes.loc[config["cassette_name"]]["size"]
-
-# Everything that is construct rather than genome, and so never a real
-# integration site.
-construct_contigs = [config["cassette_name"]] + list(config["construct_contigs"])
 
 
 # Depending on the mapper, the index files will be different

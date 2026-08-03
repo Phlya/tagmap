@@ -12,13 +12,16 @@ too.
 """
 
 import argparse
+import json
 
 import pandas as pd
 
 import tagmaplib
 
 argparser = argparse.ArgumentParser(description=__doc__)
-argparser.add_argument("--reads", nargs="*", default=[], help="{sample}_reads.tsv files")
+argparser.add_argument(
+    "--reads", nargs="*", default=[], help="{sample}_reads.tsv files"
+)
 argparser.add_argument(
     "--sites",
     default=None,
@@ -28,6 +31,15 @@ argparser.add_argument(
 )
 argparser.add_argument(
     "--validation", default=None, help="sanger_vs_ngs.tsv, if NGS data is available"
+)
+argparser.add_argument(
+    "--original-site", default=None, help="original_site.json, if configured"
+)
+argparser.add_argument(
+    "--original-max-dist",
+    type=int,
+    default=25,
+    help="A clustered site within this many bp of --original-site is unmobilized",
 )
 argparser.add_argument("--output-qc", required=True)
 argparser.add_argument("--output-clone-summary", required=True)
@@ -52,14 +64,26 @@ BASE_CLONE_COLUMNS = [
     "reverse_status",
 ]
 
-CLONE_COLUMNS = BASE_CLONE_COLUMNS + [
-    "position",
-    "positions_agree",
-    "both_sides_confirmed",
-    "summary",
-]
-
+ORIGINAL_SITE_COLUMN = "unmobilized"
 CLONE_VALIDATION_COLUMNS = ["ngs_validated", "ngs_side"]
+
+original_site = None
+if args.original_site is not None:
+    with open(args.original_site) as f:
+        original_site = json.load(f)
+
+CLONE_COLUMNS = (
+    BASE_CLONE_COLUMNS
+    + ["position", "positions_agree", "both_sides_confirmed"]
+    + ([ORIGINAL_SITE_COLUMN] if original_site is not None else [])
+    + ["summary"]
+)
+
+
+def at_original_site(sites, original_site, max_dist):
+    return (sites["chrom"] == original_site["chrom"]) & (
+        (sites["start"] - original_site["pos"]).abs() <= max_dist
+    )
 
 
 def classify(direction_reads):
@@ -92,9 +116,17 @@ def describe(forward_status, reverse_status, positions_agree):
         return "both sides confirmed"
     if forward_ok or reverse_ok:
         if forward_ok:
-            confirmed_side, other_side, other_status = "forward", "reverse", reverse_status
+            confirmed_side, other_side, other_status = (
+                "forward",
+                "reverse",
+                reverse_status,
+            )
         else:
-            confirmed_side, other_side, other_status = "reverse", "forward", forward_status
+            confirmed_side, other_side, other_status = (
+                "reverse",
+                "forward",
+                forward_status,
+            )
         return f"{confirmed_side} only confirmed ({other_side}: {other_status})"
     if forward_status == "not sequenced" and reverse_status == "not sequenced":
         return "no Sanger data"
@@ -134,8 +166,10 @@ def format_site(row):
     return f"{row.chrom}:{row.start}-{row.end}({row.strand}, {row.n_reads} reads)"
 
 
-def summarize_clone_sites(group):
-    """A clone's site(s) and whether they agree on position.
+def summarize_clone_sites(group, original_site=None, max_dist=0):
+    """A clone's site(s), whether they agree on position, and - when the
+    original, pre-mobilization locus is configured - whether any of them
+    sits there rather than at a new locus.
 
     Usually one site backed by both directions, but a clone whose forward
     and reverse reads don't cluster together (see combine_sanger_sites.py)
@@ -144,12 +178,15 @@ def summarize_clone_sites(group):
     there is one.
     """
     sites = group.sort_values(["chrom", "start"])
-    return pd.Series(
-        {
-            "position": "; ".join(format_site(row) for row in sites.itertuples()),
-            "positions_agree": bool(group["both_directions"].any()),
-        }
-    )
+    result = {
+        "position": "; ".join(format_site(row) for row in sites.itertuples()),
+        "positions_agree": bool(group["both_directions"].any()),
+    }
+    if original_site is not None:
+        result[ORIGINAL_SITE_COLUMN] = bool(
+            at_original_site(sites, original_site, max_dist).any()
+        )
+    return pd.Series(result)
 
 
 def summarize_clone_validation(group):
@@ -199,7 +236,9 @@ else:
         )
         # groupby.apply returns one Series per group; mixing ints and the
         # float frac_pass in that Series forces the whole thing to float64.
-        qc[["n_reads", "n_pass", "n_fail"]] = qc[["n_reads", "n_pass", "n_fail"]].astype(int)
+        qc[["n_reads", "n_pass", "n_fail"]] = qc[
+            ["n_reads", "n_pass", "n_fail"]
+        ].astype(int)
 
         failed = reads[~reads["pass"]].copy()
         failed["fail_reason"] = failed["fail_reason"].fillna("unknown").astype(str)
@@ -214,7 +253,9 @@ else:
                 .reset_index(name="fail_reasons")
             )
         else:
-            fail_reasons = pd.DataFrame(columns=["sample_name", "direction", "fail_reasons"])
+            fail_reasons = pd.DataFrame(
+                columns=["sample_name", "direction", "fail_reasons"]
+            )
 
         qc = qc.merge(fail_reasons, on=["sample_name", "direction"], how="left")
         qc["fail_reasons"] = qc["fail_reasons"].fillna("")
@@ -253,21 +294,35 @@ if args.sites is not None:
         )
         site_summary = (
             site_clusters.groupby(["sample_name", "clone"])
-            .apply(summarize_clone_sites, include_groups=False)
+            .apply(
+                summarize_clone_sites,
+                original_site=original_site,
+                max_dist=args.original_max_dist,
+                include_groups=False,
+            )
             .reset_index()
         )
     else:
         site_summary = pd.DataFrame(
             columns=["sample_name", "clone", "position", "positions_agree"]
+            + ([ORIGINAL_SITE_COLUMN] if original_site is not None else [])
         )
-    clone_summary = clone_summary.merge(site_summary, on=["sample_name", "clone"], how="left")
-    clone_summary["position"] = clone_summary["position"].fillna("")
-    clone_summary["positions_agree"] = clone_summary["positions_agree"].fillna(False).astype(
-        bool
+    clone_summary = clone_summary.merge(
+        site_summary, on=["sample_name", "clone"], how="left"
     )
+    clone_summary["position"] = clone_summary["position"].fillna("")
+    clone_summary["positions_agree"] = (
+        clone_summary["positions_agree"].fillna(False).astype(bool)
+    )
+    if original_site is not None:
+        clone_summary[ORIGINAL_SITE_COLUMN] = (
+            clone_summary[ORIGINAL_SITE_COLUMN].fillna(False).astype(bool)
+        )
 else:
     clone_summary["position"] = ""
     clone_summary["positions_agree"] = False
+    if original_site is not None:
+        clone_summary[ORIGINAL_SITE_COLUMN] = False
 
 clone_summary["both_sides_confirmed"] = (
     (clone_summary["forward_status"] == "PASSED")
@@ -287,7 +342,9 @@ clone_summary = clone_summary[CLONE_COLUMNS]
 if args.validation is not None:
     validation = pd.read_csv(args.validation, sep="\t", dtype={"chrom": str})
     if validation.shape[0] and "confirmed_by_ngs" in validation.columns:
-        validation["confirmed_by_ngs"] = tagmaplib.to_bool(validation["confirmed_by_ngs"])
+        validation["confirmed_by_ngs"] = tagmaplib.to_bool(
+            validation["confirmed_by_ngs"]
+        )
         clone_validation = (
             validation.groupby(["sample_name", "clone"])
             .apply(summarize_clone_validation, include_groups=False)
@@ -300,7 +357,9 @@ if args.validation is not None:
     clone_summary = clone_summary.merge(
         clone_validation, on=["sample_name", "clone"], how="left"
     )
-    clone_summary["ngs_validated"] = clone_summary["ngs_validated"].fillna(False).astype(bool)
+    clone_summary["ngs_validated"] = (
+        clone_summary["ngs_validated"].fillna(False).astype(bool)
+    )
     clone_summary = clone_summary[CLONE_COLUMNS + CLONE_VALIDATION_COLUMNS]
 
 qc.to_csv(args.output_qc, sep="\t", index=False)

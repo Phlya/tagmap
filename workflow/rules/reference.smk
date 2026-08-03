@@ -53,6 +53,38 @@ rule fasta_index:
         """
 
 
+rule find_original_site:
+    input:
+        script=f"{scripts_dir}/find_original_site.py",
+        refgen_path=refgen_path,
+    output:
+        original_site_file,
+    log:
+        "logs/find_original_site/log.log",
+    conda:
+        "../envs/all.yaml"
+    params:
+        cassette_name=config["cassette_name"],
+        site_arg=(
+            f"--site {config['original_insertion_site']}"
+            if config.get("original_insertion_site")
+            else ""
+        ),
+        upstream_seq_arg=(
+            f"--upstream-seq {config['original_insertion_upstream_seq']}"
+            if config.get("original_insertion_upstream_seq")
+            else ""
+        ),
+    shell:
+        """
+        python3 {input.script} --genome {input.refgen_path} \
+            --construct-contigs {params.cassette_name} \
+            {params.site_arg} {params.upstream_seq_arg} \
+            -o {output} \
+            >{log[0]} 2>&1
+        """
+
+
 rule get_primer_positions:
     input:
         script=f"{scripts_dir}/get_primer_positions.py",

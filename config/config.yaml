@@ -22,8 +22,6 @@ mapper: 'bwa-mem2'
 dedup: False
 
 cassette_name: 'SB_cargo_CTCF'
-# Further contigs that are part of the construct rather than the genome
-construct_contigs: []
 # Sequence of the primers used to amplify the cassette
 # If multiple PCRs were used, use the sequence of the primers used in the last step
 reverse_primer_sequence: 'aacgagttttaatgactccaactt'

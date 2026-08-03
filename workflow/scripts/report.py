@@ -41,7 +41,9 @@ SECTIONS = [
         "pointing at different loci, and both_sides_confirmed requires "
         "both. Where NGS data for the same material is available, also "
         "whether that clone's site was independently confirmed there, and "
-        "from which side(s).",
+        "from which side(s). Where the original, pre-mobilization insertion "
+        "is configured, a clone whose site sits there instead of a new "
+        "locus is flagged as unmobilized rather than confirmed.",
     ),
     (
         "validation",

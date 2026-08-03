@@ -314,7 +314,7 @@ rule find_peaks:
         min_peak_frac=config["min_peak_frac"],
         min_peak_dist=config["min_peak_dist"],
         min_peak_positions=config["min_peak_positions"],
-        ignore_chroms=" ".join(construct_contigs),
+        cassette_name=config["cassette_name"],
     shell:
         """
         python3 {input.script} -i {input.coverage} -o {output} \
@@ -322,7 +322,7 @@ rule find_peaks:
             --min-peak-width {params.min_peak_width} --min-peak-frac {params.min_peak_frac} \
             --min-peak-reads {params.min_peak_reads} --min-peak-dist {params.min_peak_dist} \
             --min-peak-positions {params.min_peak_positions} \
-            --ignore-chrom {params.ignore_chroms} \
+            --ignore-chrom {params.cassette_name} \
             >{log[0]} 2>&1
         """
 
