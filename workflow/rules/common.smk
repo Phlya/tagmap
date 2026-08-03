@@ -297,6 +297,7 @@ def workflow_targets():
             f"{sanger_folder}/all_sanger_sites.bed",
             f"{stats_folder}/sanger_qc_stats.tsv",
             f"{stats_folder}/sanger_clone_summary.tsv",
+            f"{stats_folder}/sanger_positions.tsv",
         ]
     if do_validation:
         targets += [

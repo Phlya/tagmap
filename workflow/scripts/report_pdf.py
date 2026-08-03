@@ -98,6 +98,7 @@ if __name__ == "__main__":
     argparser.add_argument("--ngs-qc", default=None)
     argparser.add_argument("--sanger-qc", default=None)
     argparser.add_argument("--sanger-clones", default=None)
+    argparser.add_argument("--sanger-positions", default=None)
     argparser.add_argument("--validation", default=None)
     argparser.add_argument("--output", "-o", required=True)
     args = argparser.parse_args()

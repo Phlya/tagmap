@@ -43,6 +43,7 @@ argparser.add_argument(
 )
 argparser.add_argument("--output-qc", required=True)
 argparser.add_argument("--output-clone-summary", required=True)
+argparser.add_argument("--output-positions", required=True)
 args = argparser.parse_args()
 
 QC_COLUMNS = [
@@ -202,6 +203,39 @@ def summarize_clone_validation(group):
     )
 
 
+POSITION_COLUMNS = ["sample_name", "n_distinct_positions"]
+
+
+def summarize_positions(site_clusters):
+    """Distinct (chrom, start) positions per plate, plus an "all" totals row.
+
+    Counted from the already-clustered sites rather than per-read, so a clone
+    seen from both primers only contributes its one agreed-on position - and
+    two clones that land on the very same locus (e.g. an unmobilized founder
+    control sequenced more than once) count as one position, not two.
+    """
+    if site_clusters.shape[0] == 0:
+        return pd.DataFrame(columns=POSITION_COLUMNS)
+    per_sample = (
+        site_clusters.drop_duplicates(["sample_name", "chrom", "start"])
+        .groupby("sample_name")
+        .size()
+        .reset_index(name="n_distinct_positions")
+        .sort_values("sample_name")
+    )
+    total = pd.DataFrame(
+        [
+            {
+                "sample_name": "all",
+                "n_distinct_positions": site_clusters.drop_duplicates(
+                    ["chrom", "start"]
+                ).shape[0],
+            }
+        ]
+    )
+    return pd.concat([per_sample, total], ignore_index=True)[POSITION_COLUMNS]
+
+
 if not args.reads:
     qc = pd.DataFrame(columns=QC_COLUMNS)
     clone_summary = pd.DataFrame(columns=BASE_CLONE_COLUMNS)
@@ -288,6 +322,7 @@ else:
 # already-clustered sites, which group a clone's passing reads by position.
 if args.sites is not None:
     site_clusters = pd.read_csv(args.sites, sep="\t", dtype={"chrom": str})
+    positions = summarize_positions(site_clusters)
     if site_clusters.shape[0] and "both_directions" in site_clusters.columns:
         site_clusters["both_directions"] = tagmaplib.to_bool(
             site_clusters["both_directions"]
@@ -323,6 +358,7 @@ else:
     clone_summary["positions_agree"] = False
     if original_site is not None:
         clone_summary[ORIGINAL_SITE_COLUMN] = False
+    positions = pd.DataFrame(columns=POSITION_COLUMNS)
 
 clone_summary["both_sides_confirmed"] = (
     (clone_summary["forward_status"] == "PASSED")
@@ -364,6 +400,7 @@ if args.validation is not None:
 
 qc.to_csv(args.output_qc, sep="\t", index=False)
 clone_summary.to_csv(args.output_clone_summary, sep="\t", index=False)
+positions.to_csv(args.output_positions, sep="\t", index=False)
 
 print(
     f"{clone_summary.shape[0]} clones: "
