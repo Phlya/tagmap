@@ -233,7 +233,7 @@ def workflow_targets():
             f"{validation_folder}/confirmed_sites.bed",
             f"{stats_folder}/validation_summary.tsv",
         ]
-    targets += [f"{stats_folder}/report.md"]
+    targets += [f"{stats_folder}/report.md", f"{stats_folder}/report.pdf"]
     return targets
 
 

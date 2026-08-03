@@ -141,6 +141,7 @@ rule combine_sanger_sites:
 rule sanger_stats:
     input:
         reads=expand(f"{sanger_folder}/{{sample}}_reads.tsv", sample=sanger_sample_list),
+        sites=f"{sanger_folder}/all_sanger_sites.bed",
         validation=f"{validation_folder}/sanger_vs_ngs.tsv" if do_validation else [],
         script=f"{scripts_dir}/sanger_stats.py",
     output:
@@ -157,7 +158,8 @@ rule sanger_stats:
         ),
     shell:
         """
-        python3 {input.script} --reads {input.reads} {params.validation_arg} \
+        python3 {input.script} --reads {input.reads} --sites {input.sites} \
+            {params.validation_arg} \
             --output-qc {output.qc} \
             --output-clone-summary {output.clones} \
             >{log[0]} 2>&1

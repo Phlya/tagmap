@@ -5,9 +5,10 @@ Reads that pass QC already end up in the per-clone consensus sites
 was never sequenced for a clone, simply has no site to show for it - so
 "missing" and "failed" look the same downstream. This works from the raw
 per-read tables instead, which keep both, and reports for every clone whether
-each ITR primer's direction is confirmed, failed QC, or was never attempted -
-and, when NGS data for the same material is available, whether that clone's
-site was independently confirmed there too.
+each ITR primer's direction passed, and if not, why: never sequenced, or the
+QC failure reason itself. When NGS data for the same material is available,
+also reports whether that clone's site was independently confirmed there
+too.
 """
 
 import argparse
@@ -18,6 +19,13 @@ import tagmaplib
 
 argparser = argparse.ArgumentParser(description=__doc__)
 argparser.add_argument("--reads", nargs="*", default=[], help="{sample}_reads.tsv files")
+argparser.add_argument(
+    "--sites",
+    default=None,
+    help="all_sanger_sites.bed, to check whether a clone's forward and "
+    "reverse reads agree on position rather than just each passing QC "
+    "independently",
+)
 argparser.add_argument(
     "--validation", default=None, help="sanger_vs_ngs.tsv, if NGS data is available"
 )
@@ -35,13 +43,18 @@ QC_COLUMNS = [
     "fail_reasons",
 ]
 
-CLONE_COLUMNS = [
+BASE_CLONE_COLUMNS = [
+    "sample_name",
     "clone",
-    "samples",
     "n_forward_reads",
     "n_reverse_reads",
     "forward_status",
     "reverse_status",
+]
+
+CLONE_COLUMNS = BASE_CLONE_COLUMNS + [
+    "position",
+    "positions_agree",
     "both_sides_confirmed",
     "summary",
 ]
@@ -58,20 +71,33 @@ def classify(direction_reads):
     return "failed"
 
 
-def describe(forward_status, reverse_status):
-    """A one-line summary of a clone's forward/reverse coverage."""
-    if forward_status == "confirmed" and reverse_status == "confirmed":
+def describe(forward_status, reverse_status, positions_agree):
+    """A one-line summary of a clone's forward/reverse coverage.
+
+    forward_status/reverse_status are "PASSED", "not sequenced", or the QC
+    failure reason itself - so a passing side is identified by that exact
+    string, not by absence of a separate reason column.
+
+    Both sides can independently pass QC while pointing at different loci -
+    e.g. one read stuck on a residual copy of the donor construct - so
+    "PASSED" from both primers isn't enough; their sites also have to
+    cluster together (positions_agree, from the already-clustered
+    all_sanger_sites.bed) for the clone to really be confirmed.
+    """
+    forward_ok = forward_status == "PASSED"
+    reverse_ok = reverse_status == "PASSED"
+    if forward_ok and reverse_ok:
+        if not positions_agree:
+            return "forward and reverse confirmed but disagree on position"
         return "both sides confirmed"
-    if forward_status == "confirmed" or reverse_status == "confirmed":
-        if forward_status == "confirmed":
+    if forward_ok or reverse_ok:
+        if forward_ok:
             confirmed_side, other_side, other_status = "forward", "reverse", reverse_status
         else:
             confirmed_side, other_side, other_status = "reverse", "forward", forward_status
         return f"{confirmed_side} only confirmed ({other_side}: {other_status})"
-    if forward_status == "no data" and reverse_status == "no data":
+    if forward_status == "not sequenced" and reverse_status == "not sequenced":
         return "no Sanger data"
-    if forward_status == "failed" and reverse_status == "failed":
-        return "both sides failed QC"
     return f"neither confirmed (forward: {forward_status}, reverse: {reverse_status})"
 
 
@@ -79,6 +105,51 @@ def fail_reason_summary(group):
     """'reason (n); reason (n)', most common first, for one failed group."""
     counts = group["reason"].value_counts()
     return "; ".join(f"{reason} ({n})" for reason, n in counts.items())
+
+
+def clone_fail_reasons(direction_reads):
+    """'reason (n); reason (n)' for the failed reads of one clone's primer
+    direction, or "" if none failed."""
+    failed = direction_reads[~direction_reads["pass"].astype(bool)].copy()
+    if failed.empty:
+        return ""
+    failed["fail_reason"] = failed["fail_reason"].fillna("unknown").astype(str)
+    failed.loc[failed["fail_reason"] == "", "fail_reason"] = "unknown"
+    reasons = failed["fail_reason"].str.split("; ").explode()
+    return fail_reason_summary(pd.DataFrame({"reason": reasons}))
+
+
+def side_status(status, direction_reads):
+    """The status of one clone's reads from one primer: "PASSED", "not
+    sequenced", or the QC failure reason itself."""
+    if status == "confirmed":
+        return "PASSED"
+    if status == "no data":
+        return "not sequenced"
+    return clone_fail_reasons(direction_reads)
+
+
+def format_site(row):
+    """One site cluster as 'chrom:start-end(strand, n reads)'."""
+    return f"{row.chrom}:{row.start}-{row.end}({row.strand}, {row.n_reads} reads)"
+
+
+def summarize_clone_sites(group):
+    """A clone's site(s) and whether they agree on position.
+
+    Usually one site backed by both directions, but a clone whose forward
+    and reverse reads don't cluster together (see combine_sanger_sites.py)
+    ends up with more than one single-direction site here - listing all of
+    them shows where the disagreement actually is, rather than just that
+    there is one.
+    """
+    sites = group.sort_values(["chrom", "start"])
+    return pd.Series(
+        {
+            "position": "; ".join(format_site(row) for row in sites.itertuples()),
+            "positions_agree": bool(group["both_directions"].any()),
+        }
+    )
 
 
 def summarize_clone_validation(group):
@@ -96,7 +167,7 @@ def summarize_clone_validation(group):
 
 if not args.reads:
     qc = pd.DataFrame(columns=QC_COLUMNS)
-    clone_summary = pd.DataFrame(columns=CLONE_COLUMNS)
+    clone_summary = pd.DataFrame(columns=BASE_CLONE_COLUMNS)
 else:
     reads = pd.concat(
         (pd.read_csv(path, sep="\t", dtype={"chrom": str}) for path in args.reads),
@@ -106,7 +177,7 @@ else:
 
     if reads.shape[0] == 0:
         qc = pd.DataFrame(columns=QC_COLUMNS)
-        clone_summary = pd.DataFrame(columns=CLONE_COLUMNS)
+        clone_summary = pd.DataFrame(columns=BASE_CLONE_COLUMNS)
     else:
 
         def summarize_reads(group):
@@ -152,46 +223,83 @@ else:
         def summarize_clone(group):
             forward = group[group["direction"] == "forward"]
             reverse = group[group["direction"] == "reverse"]
-            forward_status = classify(forward)
-            reverse_status = classify(reverse)
             return pd.Series(
                 {
-                    "samples": ", ".join(sorted(group["sample_name"].unique())),
                     "n_forward_reads": forward.shape[0],
                     "n_reverse_reads": reverse.shape[0],
-                    "forward_status": forward_status,
-                    "reverse_status": reverse_status,
-                    "both_sides_confirmed": forward_status == "confirmed"
-                    and reverse_status == "confirmed",
-                    "summary": describe(forward_status, reverse_status),
+                    "forward_status": side_status(classify(forward), forward),
+                    "reverse_status": side_status(classify(reverse), reverse),
                 }
             )
 
         clone_summary = (
-            reads.groupby("clone")
+            reads.groupby(["sample_name", "clone"])
             .apply(summarize_clone, include_groups=False)
-            .reset_index()[CLONE_COLUMNS]
-            .sort_values("clone")
+            .reset_index()[BASE_CLONE_COLUMNS]
+            .sort_values(["sample_name", "clone"])
         )
         clone_summary[["n_forward_reads", "n_reverse_reads"]] = clone_summary[
             ["n_forward_reads", "n_reverse_reads"]
         ].astype(int)
-        clone_summary["both_sides_confirmed"] = clone_summary[
-            "both_sides_confirmed"
-        ].astype(bool)
+
+# Both primers can independently pass QC while pointing at different loci, so
+# "confirmed" from each side isn't enough on its own - cross-check against the
+# already-clustered sites, which group a clone's passing reads by position.
+if args.sites is not None:
+    site_clusters = pd.read_csv(args.sites, sep="\t", dtype={"chrom": str})
+    if site_clusters.shape[0] and "both_directions" in site_clusters.columns:
+        site_clusters["both_directions"] = tagmaplib.to_bool(
+            site_clusters["both_directions"]
+        )
+        site_summary = (
+            site_clusters.groupby(["sample_name", "clone"])
+            .apply(summarize_clone_sites, include_groups=False)
+            .reset_index()
+        )
+    else:
+        site_summary = pd.DataFrame(
+            columns=["sample_name", "clone", "position", "positions_agree"]
+        )
+    clone_summary = clone_summary.merge(site_summary, on=["sample_name", "clone"], how="left")
+    clone_summary["position"] = clone_summary["position"].fillna("")
+    clone_summary["positions_agree"] = clone_summary["positions_agree"].fillna(False).astype(
+        bool
+    )
+else:
+    clone_summary["position"] = ""
+    clone_summary["positions_agree"] = False
+
+clone_summary["both_sides_confirmed"] = (
+    (clone_summary["forward_status"] == "PASSED")
+    & (clone_summary["reverse_status"] == "PASSED")
+    & clone_summary["positions_agree"]
+)
+clone_summary["summary"] = [
+    describe(f, r, p)
+    for f, r, p in zip(
+        clone_summary["forward_status"],
+        clone_summary["reverse_status"],
+        clone_summary["positions_agree"],
+    )
+]
+clone_summary = clone_summary[CLONE_COLUMNS]
 
 if args.validation is not None:
     validation = pd.read_csv(args.validation, sep="\t", dtype={"chrom": str})
     if validation.shape[0] and "confirmed_by_ngs" in validation.columns:
         validation["confirmed_by_ngs"] = tagmaplib.to_bool(validation["confirmed_by_ngs"])
         clone_validation = (
-            validation.groupby("clone")
+            validation.groupby(["sample_name", "clone"])
             .apply(summarize_clone_validation, include_groups=False)
             .reset_index()
         )
     else:
-        clone_validation = pd.DataFrame(columns=["clone"] + CLONE_VALIDATION_COLUMNS)
-    clone_summary = clone_summary.merge(clone_validation, on="clone", how="left")
+        clone_validation = pd.DataFrame(
+            columns=["sample_name", "clone"] + CLONE_VALIDATION_COLUMNS
+        )
+    clone_summary = clone_summary.merge(
+        clone_validation, on=["sample_name", "clone"], how="left"
+    )
     clone_summary["ngs_validated"] = clone_summary["ngs_validated"].fillna(False).astype(bool)
     clone_summary = clone_summary[CLONE_COLUMNS + CLONE_VALIDATION_COLUMNS]
 
