@@ -121,6 +121,21 @@ check(
     "but still validated by a two-sided NGS site",
 )
 
+# A01 and B01 sit at two different loci (checked above), both sequenced on
+# the one plate configured here, so plate1 and the "all" total should agree
+# and both equal the number of planted insertions.
+sanger_positions = pd.read_csv("results/stats/sanger_positions.tsv", sep="\t")
+plate1_positions = sanger_positions[sanger_positions["sample_name"] == "plate1"]
+all_positions = sanger_positions[sanger_positions["sample_name"] == "all"]
+check(
+    plate1_positions.shape[0] == 1
+    and plate1_positions["n_distinct_positions"].iloc[0] == EXPECTED.shape[0]
+    and all_positions.shape[0] == 1
+    and all_positions["n_distinct_positions"].iloc[0] == EXPECTED.shape[0],
+    "sanger_positions.tsv should show "
+    f"{EXPECTED.shape[0]} distinct positions for plate1 and for the total",
+)
+
 validation_summary = pd.read_csv("results/stats/validation_summary.tsv", sep="\t")
 totals = validation_summary[validation_summary["sample_name"] == "all"]
 check(

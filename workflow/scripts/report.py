@@ -46,6 +46,14 @@ SECTIONS = [
         "locus is flagged as unmobilized rather than confirmed.",
     ),
     (
+        "sanger_positions",
+        "Sanger positions",
+        "Distinct genomic positions found across the clustered Sanger sites "
+        "(all_sanger_sites.bed), per plate and in total - two clones that "
+        "land on the very same locus, such as an unmobilized founder control "
+        "sequenced more than once, count once rather than twice.",
+    ),
+    (
         "validation",
         "Sanger vs NGS validation",
         "Sanger sites cross-checked against the NGS data from the same "
@@ -58,6 +66,7 @@ if __name__ == "__main__":
     argparser.add_argument("--ngs-qc", default=None)
     argparser.add_argument("--sanger-qc", default=None)
     argparser.add_argument("--sanger-clones", default=None)
+    argparser.add_argument("--sanger-positions", default=None)
     argparser.add_argument("--validation", default=None)
     argparser.add_argument("--output", "-o", required=True)
     args = argparser.parse_args()
