@@ -1,0 +1,4 @@
+name	ab1	fastq	direction	clone	ngs_sample
+#plate1	../Data/Raw/20231201_plate1_forward/	forward		T1
+#plate1_rev	../Data/Raw/20231201_plate1_reverse/*.ab1	reverse		T1
+#plate2	../Data/Raw/20231201_plate2/			H2

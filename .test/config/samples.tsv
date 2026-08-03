@@ -1,0 +1,2 @@
+name	fastq1	fastq2
+clone1	data/clone1.R1.fastq.gz	data/clone1.R2.fastq.gz

@@ -1,11 +1,19 @@
-# Configuration file for the tagmap pipeline
-# Path to the .tsv file containing the samples information: sample name and paths to the fastq files
-# Entries with the same sample name will be merged
+# Configuration file for the tagmap pipeline.
+# Only refgen_path, chrom_sizes_path, cassette_name and the two primer
+# sequences are required; everything else has a default in
+# workflow/schemas/config.schema.yaml.
+
+# Sample sheets. Give either or both.
+# NGS libraries: sample name and paths to the fastq files. Rows with the same
+# sample name are merged.
 samples_path: 'config/samples.tsv'
+# Sanger runs: .ab1 traces or already basecalled fastq, one row per plate/run.
+sanger_samples_path: 'config/sanger_samples.tsv'
+
 refgen_path: '../../../mm10_custom.fa'
 chrom_sizes_path: '../../../mobilization_mapping/mm10_custom_chromsizes.txt'
-
-# Chromsizes with just the original genome, without the cassette, to use for UCSC visualization
+# Chromsizes with just the original genome, without the cassette, to use for
+# UCSC visualization. Needed when there are NGS samples.
 chrom_sizes_path_no_cassette: '../../../genomes/mm10/chromsizes.txt'
 # Path to the blacklist file: any peak overlapping this file will be removed
 # Simply delete this line if you don't have a blacklist
@@ -16,6 +24,9 @@ mapper: 'bwa-mem2'
 dedup: True
 
 cassette_name: 'mobilized_enhancer'
+# Further contigs of the reference that belong to the construct rather than the
+# genome, e.g. a second cassette. Never reported as integration sites.
+construct_contigs: []
 # Sequence of the primers used to amplify the cassette
 # If multiple PCRs were used, use the sequence of the primers used in the last step
 # Please only specify the portion of the primers that binds the ITRs
@@ -27,21 +38,56 @@ reverse_primer_sequence: 'CGTCAATTTTACGCAGACTATC'
 # Not used at the moment
 # adapter_seq: 'TCGTCGGCAGCGTCAGATGTGTATAAGAGACAG'
 
-# Sequenc used by the transposon for integration; e.g. TA for SB, TTAA for PB
-
+# Sequence used by the transposon for integration; e.g. TA for SB, TTAA for PB
 insertion_seq: "TTAA"
 
-use_junction_readthrough: False
+use_only_read_junctions: False
 
-# Peak calling
+# Peak calling (NGS only)
 min_peak_width: 200
 min_peak_reads: 10
 min_peak_frac: 0.01
 min_peak_dist: 1000
+min_peak_positions: 1
+# Peaks from the two sides of the cassette this close are one insertion site
+max_dist_between_sides: 100
+
+# Sanger reads
+# 'abi-trim' uses the base calls stored in the trace and needs no external
+# binary; 'tracy' re-calls the bases from the trace itself
+sanger_basecaller: 'abi-trim'
+sanger_map_args: '-T 30 -k 19'
+# A genomic alignment needs at least this MAPQ and this many aligned bases
+sanger_min_mapq: 30
+sanger_min_aligned: 30
+# A read fails if this many bases before the junction match neither the genome
+# nor the construct
+sanger_max_unexplained: 50
+# Named groups pulled out of each trace file name. Recognised group names are
+# well, clone and direction; any others become extra columns in the output.
+# Values from the sample sheet fill in whatever this does not capture.
+# e.g. matches 'A01_99465_SB_fwd_seq.ab1' -> well=A01, run=99465, direction=fwd
+sanger_name_regex: '(?P<well>[A-H]\d{2})_(?P<run>\d+)_.*(?P<direction>fwd|rev)'
+sanger_direction_map:
+  fwd: forward
+  rev: reverse
+# Reads of one clone this close together are one integration site
+sanger_max_dist: 100
+
+# Compare Sanger sites against NGS sites and peaks. Only has an effect when
+# both sample sheets are given. Useful when Sanger sequencing only worked from
+# one end but the NGS library saw both.
+validate_sanger_with_ngs: True
+validation_max_dist: 500
 
 fastq_folder: '../Data/Raw/T1/fastq/'
 bams_folder: '../Data/Processed/T1/bams/'
+primer_position_file: '../Data/Processed/T1/primer_positions.json'
 pairs_folder: '../Data/Processed/T1/pairs/'
 coverage_folder: '../Data/Processed/T1/coverage/'
 peaks_folder: '../Data/Processed/T1/peaks/'
 insertion_sites_folder: '../Data/Processed/T1/insertion_sites/'
+sanger_folder: '../Data/Processed/T1/sanger/'
+validation_folder: '../Data/Processed/T1/validation/'
+# Summary tables and the combined report.md
+stats_folder: '../Data/Processed/T1/stats/'

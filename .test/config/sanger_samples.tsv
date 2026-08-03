@@ -1,0 +1,3 @@
+name	ab1	fastq	direction	clone	ngs_sample
+plate1		data/plate1.fastq.gz			clone1
+plate1		data/plate2.fastq.gz			clone1

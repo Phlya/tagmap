@@ -27,7 +27,10 @@ jobs:
     - name: Lint workflow
       uses: snakemake/snakemake-github-action@v1.24.0
       with:
-        directory: .
+        # Uses the .test config: the DAG is built eagerly from the sample
+        # sheets and reference paths, so linting needs a config that actually
+        # resolves, and the real config/config.yaml points outside the repo.
+        directory: .test
         snakefile: workflow/Snakefile
         args: "--lint"
 
@@ -45,6 +48,10 @@ jobs:
         directory: .test
         snakefile: workflow/Snakefile
         args: "--use-conda --show-failed-logs --cores 3 --conda-cleanup-pkgs cache --all-temp"
+
+    - name: Check test results
+      run: python3 -m pip install pandas && python3 check_results.py
+      working-directory: .test
 
     - name: Test report
       uses: snakemake/snakemake-github-action@v1.24.0

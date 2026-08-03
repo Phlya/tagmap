@@ -1,0 +1,227 @@
+$schema: "https://json-schema.org/draft/2020-12/schema"
+description: Configuration for the tagmap workflow
+type: object
+
+properties:
+  # ---------------------------------------------------------------- inputs --
+  samples_path:
+    type: string
+    description: >
+      TSV of paired-end NGS libraries (columns name, fastq1, fastq2). Rows
+      sharing a name are merged. Leave unset for a Sanger-only run.
+  sanger_samples_path:
+    type: string
+    description: >
+      TSV of Sanger runs (columns name, ab1 or fastq, and optionally
+      direction, clone, ngs_sample). Leave unset for an NGS-only run.
+
+  # ------------------------------------------------------------- reference --
+  refgen_path:
+    type: string
+    description: Reference FASTA, including the cassette as an extra contig.
+  chrom_sizes_path:
+    type: string
+    description: Chrom sizes of refgen_path, including the cassette contig.
+  chrom_sizes_path_no_cassette:
+    type: string
+    description: >
+      Chrom sizes of the genome alone, without the cassette. Used to trim
+      output for genome browsers, which do not know about the cassette.
+  mapper:
+    type: string
+    enum: ["bwa-mem", "bwa-mem2", "bwa-meme"]
+    default: "bwa-mem2"
+    description: From slowest/leanest to fastest/most memory hungry.
+
+  # -------------------------------------------------------------- cassette --
+  cassette_name:
+    type: string
+    description: Name of the cassette contig in refgen_path.
+  construct_contigs:
+    type: array
+    items:
+      type: string
+    default: []
+    description: >
+      Further contigs that are part of the construct rather than real
+      integration sites (e.g. a second cassette). Treated like cassette_name
+      when deciding which part of a Sanger read is genomic.
+  forward_primer_sequence:
+    type: string
+    description: >
+      The part of the forward primer that binds the ITR. If several PCRs were
+      used, the primer of the last one.
+  reverse_primer_sequence:
+    type: string
+    description: As forward_primer_sequence, for the other end of the cassette.
+  primer_overhang:
+    type: string
+    description: 5' overhang of the primers, likely the Nextera N7 sequence.
+  insertion_seq:
+    type: string
+    default: "TA"
+    description: >
+      Motif the transposon integrates into - TA for Sleeping Beauty, TTAA for
+      PiggyBac. Sites are snapped onto the nearest occurrence.
+
+  # ---------------------------------------------------------- NGS analysis --
+  do_fastqc:
+    type: boolean
+    default: false
+  trim:
+    type: boolean
+    default: false
+    description: Trim reads with fastp before mapping.
+  trim_args:
+    type: string
+    default: ""
+    description: Extra arguments passed to fastp when trim is true.
+  dedup:
+    type: boolean
+    default: true
+  use_only_read_junctions:
+    type: boolean
+    default: false
+    description: >
+      Keep only pairs that read through the end of the cassette, rather than
+      all pairs anchored at the ITR primer.
+  blacklist:
+    type: string
+    description: Peaks overlapping this BED are dropped. Unset to disable.
+
+  # --------------------------------------------------------- peak calling ---
+  min_peak_width:
+    type: integer
+    default: 1
+  min_peak_reads:
+    type: integer
+    default: 10
+  min_peak_frac:
+    type: number
+    default: 0.01
+  min_peak_dist:
+    type: integer
+    default: 1000
+  min_peak_positions:
+    type: integer
+    default: 1
+  max_dist_between_sides:
+    type: integer
+    default: 100
+    description: >
+      Peaks from the forward and reverse side of the cassette within this
+      distance are combined into one insertion site.
+
+  # ------------------------------------------------------- Sanger analysis --
+  sanger_basecaller:
+    type: string
+    enum: ["abi-trim", "tracy"]
+    default: "abi-trim"
+    description: >
+      abi-trim reads the base calls embedded in the .ab1 trace and applies Mott
+      trimming; tracy re-calls bases from the trace itself.
+  sanger_map_args:
+    type: string
+    default: "-T 30 -k 19"
+    description: Extra arguments for mapping Sanger reads.
+  sanger_min_mapq:
+    type: integer
+    default: 30
+    description: Minimum MAPQ for a genomic alignment to define a site.
+  sanger_min_aligned:
+    type: integer
+    default: 30
+    description: Minimum aligned length of the genomic segment of a read.
+  sanger_max_unexplained:
+    type: integer
+    default: 50
+    description: >
+      A read fails QC if more than this many bases before the genomic segment
+      are neither aligned to the genome nor to the cassette.
+  sanger_name_regex:
+    type: ["string", "null"]
+    default: null
+    description: >
+      Regex with named groups matched against each .ab1/read file stem, e.g.
+      '(?P<well>[A-H]\d{2})_(?P<run>\d+)'. Recognised groups are well, clone
+      and direction; any others are carried through as extra columns. Values
+      from the sample sheet fill in whatever the regex does not capture.
+  sanger_direction_map:
+    type: object
+    default:
+      F: forward
+      R: reverse
+    description: >
+      Maps the value of the regex's direction group onto forward/reverse.
+      Reads sequenced with the reverse primer have their strand flipped, so
+      that the strand always describes the cassette's orientation.
+  sanger_default_direction:
+    type: string
+    enum: ["forward", "reverse"]
+    default: "forward"
+    description: Used when neither the regex nor the sample sheet give one.
+  sanger_max_dist:
+    type: integer
+    default: 100
+    description: Reads within this distance are collapsed into one site.
+
+  # ------------------------------------------------------------ validation --
+  validate_sanger_with_ngs:
+    type: boolean
+    default: true
+    description: >
+      Compare Sanger sites against NGS sites and peaks. Only has an effect when
+      both sample sheets are given.
+  validation_max_dist:
+    type: integer
+    default: 500
+    description: Distance within which a Sanger and an NGS site are the same site.
+
+  # --------------------------------------------------------------- outputs --
+  fastq_folder:
+    type: string
+    default: "results/fastq"
+  bams_folder:
+    type: string
+    default: "results/bams"
+  pairs_folder:
+    type: string
+    default: "results/pairs"
+  coverage_folder:
+    type: string
+    default: "results/coverage"
+  peaks_folder:
+    type: string
+    default: "results/peaks"
+  insertion_sites_folder:
+    type: string
+    default: "results/insertion_sites"
+  sanger_folder:
+    type: string
+    default: "results/sanger"
+  validation_folder:
+    type: string
+    default: "results/validation"
+  stats_folder:
+    type: string
+    default: "results/stats"
+    description: >
+      Summary tables (mobilization rate, site sidedness, Sanger QC, per-clone
+      coverage, cross-validation) and the combined report.md.
+  primer_position_file:
+    type: string
+    default: "results/primer_positions.json"
+  fasta_index_file:
+    type: string
+    default: "results/refgen.fai"
+    description: >
+      samtools/pysam .fai index of refgen_path, used to look up sequence at
+      insertion sites. Kept here rather than next to the FASTA so that a
+      shared, read only reference genome still works.
+
+required:
+  - refgen_path
+  - chrom_sizes_path
+  - cassette_name
+  - forward_primer_sequence
+  - reverse_primer_sequence

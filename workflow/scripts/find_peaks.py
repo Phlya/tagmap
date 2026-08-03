@@ -1,3 +1,5 @@
+"""Call peaks of read starts, each a candidate side of an integration site."""
+
 from pathlib import Path
 
 import pandas as pd
@@ -6,7 +8,7 @@ from skimage.filters import threshold_li
 
 import argparse
 
-argparser = argparse.ArgumentParser()
+argparser = argparse.ArgumentParser(description=__doc__)
 argparser.add_argument("--input", "-i", type=str)
 argparser.add_argument(
     "--auto-li",
@@ -20,7 +22,13 @@ argparser.add_argument("--min-peak-frac", type=float, default=0.01)
 argparser.add_argument("--min-peak-width", type=int, default=50)
 argparser.add_argument("--min-peak-positions", type=int, default=1)
 argparser.add_argument("--min-peak-dist", type=int, default=1000)
-argparser.add_argument("--ignore-chrom", type=str, default=None)
+argparser.add_argument(
+    "--ignore-chrom",
+    type=str,
+    nargs="*",
+    default=[],
+    help="Contigs that are part of the construct, so never insertion sites",
+)
 argparser.add_argument("--output", "-o", type=str)
 args = argparser.parse_args()
 
@@ -29,19 +37,15 @@ coverage = pd.read_csv(
     sep="\t",
     header=None,
     names=["chrom", "start", "end", "coverage", "fraction"],
+    dtype={"chrom": str},
 )
-
-# coverage_non_singleton = coverage[coverage["coverage"] > 1]
-# if coverage_non_singleton.shape[0] == 0:
-# Path(args.output).touch()
-# exit()
 
 if coverage.shape[0] == 0:
     Path(args.output).touch()
     exit()
 
 if args.ignore_chrom:
-    coverage = coverage[coverage["chrom"] != args.ignore_chrom]
+    coverage = coverage[~coverage["chrom"].isin(args.ignore_chrom)]
 
 if args.cluster:
     merged = bioframe.merge(coverage, min_dist=args.min_peak_dist)
@@ -59,7 +63,9 @@ if args.cluster:
             }
         )
     )
-coverage = coverage.rename(columns={"coverage": "n_reads"})
+# bioframe.overlap suffixes the right-hand columns, so clustering leaves the
+# read count as coverage_ rather than coverage.
+coverage = coverage.rename(columns={"coverage": "n_reads", "coverage_": "n_reads"})
 
 if args.auto_li:
     threshold = threshold_li(coverage["n_reads"].to_numpy())
@@ -74,17 +80,16 @@ if args.auto_li:
         .reset_index(drop=True)
     )
 
+if not args.cluster:
+    # Without clustering every peak is a single position, so the column still
+    # exists and combine_peaks does not have to special case the two modes.
+    coverage["n_positions"] = 1
+
 coverage = coverage[coverage["end"] - coverage["start"] >= args.min_peak_width]
-if args.cluster:
-    coverage = coverage[
-        (coverage["fraction"] >= args.min_peak_frac)
-        & (coverage["n_reads"] >= args.min_peak_reads)
-        & (coverage["n_positions"] >= args.min_peak_positions)
-    ]
-else:
-    coverage = coverage[
-        (coverage["fraction"] >= args.min_peak_frac)
-        & (coverage["n_reads"] >= args.min_peak_reads)
-    ]
+coverage = coverage[
+    (coverage["fraction"] >= args.min_peak_frac)
+    & (coverage["n_reads"] >= args.min_peak_reads)
+    & (coverage["n_positions"] >= args.min_peak_positions)
+]
 
 coverage.to_csv(args.output, sep="\t", header=False, index=False)

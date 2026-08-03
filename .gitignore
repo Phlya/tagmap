@@ -1,6 +1,10 @@
 results/**
 resources/**
+# The test dataset is small and has to be checked in for CI to have anything
+# to run on.
+!.test/resources/**
 logs/**
 benchmarks/**
 .snakemake
 .snakemake/**
+__pycache__/
