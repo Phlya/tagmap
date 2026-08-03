@@ -1,0 +1,61 @@
+# The regular (non-long-read) 2G6 run with peak_caller: junction_tiered - the
+# harder half of the test, and the case that matters for future libraries whose
+# reads may not reach the junction.
+#
+# These reads almost never span the cassette/genome junction, so nearly every
+# peak here falls to the anchored tier and is positioned by the read that got
+# closest to the junction rather than by the junction itself. The old caller
+# treated each tagmentation site as its own peak and called 30,053 sites for a
+# pool of ~800, confirming 55% of the Sanger clones; this config shows what the
+# same data supports once positions and counts are separated.
+samples_path: './config/samples_2G6_T1_30c.tsv'
+sanger_samples_path: './config/sanger_samples_2G6_feb2025.tsv'
+
+refgen_path: '../SB_tagmentation_mapping/refgen_2G6/mm10_SB_CTCF.fa'
+chrom_sizes_path: '../SB_tagmentation_mapping/refgen_2G6/mm10_SB_CTCF_chromsizes.txt'
+chrom_sizes_path_no_cassette: '../../genomes/mm10/chromsizes.txt'
+
+do_fastqc: False
+trim: False
+
+mapper: 'bwa-mem2'
+
+dedup: True
+
+cassette_name: 'SB_cargo_CTCF'
+
+reverse_primer_sequence: 'aacgagttttaatgactccaactt'
+forward_primer_sequence: 'TCCTAACTGACCTAAGACAGG'
+insertion_seq: "TA"
+
+
+peak_caller: 'junction_tiered'
+junction_jitter: 2
+max_fragment: 1000
+min_junction_frags: 1
+min_junction_mapq: 0
+# Thin junction peaks must also carry a TA at the junction to be believed.
+motif_max_support: 3
+
+min_peak_width: 1
+# Almost every peak here is anchored-only, so this is the threshold doing the
+# work: two independent molecules, counted as distinct tagmentation positions
+# rather than reads.
+min_peak_reads: 2
+min_peak_frac: 0.0
+min_peak_dist: 500
+min_peak_positions: 1
+max_dist_between_sides: 2
+
+sanger_basecaller: 'abi-trim'
+sanger_min_mapq: 30
+sanger_name_regex: '(?P<well>[A-H]\d{2})_\d+_(?P<direction>SB_fwd_seq|852)'
+sanger_direction_map:
+  SB_fwd_seq: forward
+  "852": reverse
+sanger_max_dist: 100
+
+validate_sanger_with_ngs: True
+validation_max_dist: 500
+
+results_folder: 'results/2G6_T1_30c_tiered'

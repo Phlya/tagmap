@@ -4,47 +4,28 @@ import numpy as np
 
 import bioframe
 import pandas as pd
-from pairtools.lib import fileio, headerops
 import argparse
+
+from tagmaplib import cassette_orientation, normalise_junction_pos, read_pairs
 
 argparser = argparse.ArgumentParser()
 argparser.add_argument("--input", "-i", type=str)
 argparser.add_argument("--side", "-s", type=int, choices=[1, 2], default=1)
+argparser.add_argument(
+    "--itr-side",
+    choices=["forward", "reverse"],
+    default=None,
+    help="Which ITR primer these pairs are anchored at. Given it, each position "
+    "also gets the orientation its reads imply, which find_peaks.py carries "
+    "through so that find_insertion_sites.py does not have to guess one from "
+    "the order of the two sides.",
+)
 argparser.add_argument(
     "--end", choices=[5, 3, 0], default=0
 )  # 5' end, 3' end, or whatever is reported as pos1 and pos2 in pairs [default: 0]
 argparser.add_argument("--threads", "-t", type=int, default=1)
 argparser.add_argument("--output", "-o", type=str)
 argparser.add_argument("--output-bigwig", type=str, default=None, required=False)
-
-
-def read_pairs(pairs, threads=1):
-    pairs_stream = (
-        fileio.auto_open(
-            pairs,
-            mode="r",
-            nproc=threads,
-        )
-        if isinstance(pairs, str)
-        else pairs
-    )
-
-    header, pairs_body = headerops.get_header(pairs_stream)
-
-    cols = headerops.extract_column_names(header)
-
-    chromsizes = headerops.extract_chromsizes(header)
-
-    pairs_df = pd.read_csv(
-        pairs_body,
-        header=None,
-        names=cols,
-        chunksize=None,
-        sep="\t",
-        dtype={"chrom1": str, "chrom2": str},
-    )
-
-    return pairs_df, chromsizes
 
 
 # def pairs_to_pairs_merged(pairs_df):
@@ -105,10 +86,25 @@ if __name__ == "__main__":
 
     s = args.side
     e = args.end if args.end != 0 else ""
-    pairs["start"] = pairs[f"pos{e}{s}"] - 1
-    pairs["end"] = pairs[f"pos{e}{s}"]
+    position = pairs[f"pos{e}{s}"]
+    if args.end != 3:
+        # pos and pos5 both name the alignment's 5' end, which is the junction
+        # the reads were sequenced outwards from - and which pairtools places
+        # one base apart on the two strands.
+        position = normalise_junction_pos(position, pairs[f"strand{s}"])
+    pairs["start"] = position - 1
+    pairs["end"] = position
     pairs[["start", "end"]] = np.sort(pairs[["start", "end"]], axis=1)
     pairs["chrom"] = pairs[f"chrom{s}"]
+    # Reads run outwards from the cassette, from the junction towards the
+    # tagmentation cut, so which way they run says which way the insertion
+    # faces. Kept per position, because both ITR sides of one integration sit
+    # on the same base and so cannot be told apart by their order.
+    if args.itr_side is not None:
+        pairs["rightwards"] = pairs[f"pos3{s}"] > pairs[f"pos5{s}"]
+        facing = (
+            pairs.groupby(["chrom", "start"])["rightwards"].mean().rename("facing")
+        )
 
     pairs = pairs[["chrom", "start", "end"]]
     pairs.sort_values(["chrom", "start", "end"], inplace=True)
@@ -122,7 +118,15 @@ if __name__ == "__main__":
     ).reset_index(drop=True)[["chrom", "start", "end", "count"]]
     coverage_df = coverage_df[coverage_df["count"] > 0]
     coverage_df["fraction"] = coverage_df["count"] / coverage_df["count"].sum()
-    coverage_df.to_csv(args.output, sep="\t", index=False, header=False)
 
     if args.output_bigwig is not None:
         bioframe.to_bigwig(coverage_df, chromsizes, args.output_bigwig)
+
+    if args.itr_side is not None:
+        merged = coverage_df.merge(facing, on=["chrom", "start"], how="left")
+        coverage_df["orientation"] = cassette_orientation(
+            args.itr_side, merged["facing"].fillna(0) > 0.5
+        )
+    else:
+        coverage_df["orientation"] = "."
+    coverage_df.to_csv(args.output, sep="\t", index=False, header=False)

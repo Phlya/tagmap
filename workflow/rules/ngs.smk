@@ -174,6 +174,7 @@ rule stats:
     input:
         pairs=f"{pairs_folder}/{{sample}}_sorted.pairs",
         primer_positions=config["primer_position_file"],
+        chromsizes=config["chrom_sizes_path"],
     output:
         stats=f"{pairs_folder}/{{sample}}_stats.yml",
     log:
@@ -204,6 +205,7 @@ rule dedup:
     input:
         pairs=f"{pairs_folder}/{{sample}}_sorted.pairs",
         primer_positions=config["primer_position_file"],
+        chromsizes=config["chrom_sizes_path"],
     output:
         pairs=f"{pairs_folder}/{{sample}}_dupmarked.pairs",
         stats=f"{pairs_folder}/{{sample}}_stats.yml",
@@ -242,6 +244,7 @@ rule get_trans_side_pairs:
             else f"{pairs_folder}/{{sample}}_sorted.pairs"
         ),
         primer_positions=config["primer_position_file"],
+        chromsizes=config["chrom_sizes_path"],
     output:
         f"{pairs_folder}/{{sample}}_{{side}}.pairs",
     log:
@@ -283,48 +286,96 @@ rule coverage:
         side=1,
     shell:
         """
-        python3 {input.script} -i {input.pairs} --side {params.side} -o {output.bg} \
+        python3 {input.script} -i {input.pairs} --side {params.side} \
+            --itr-side {wildcards.side} -o {output.bg} \
             -t {threads} --output-bigwig {output.bw} \
             >{log[0]} 2>&1
         """
 
 
-rule find_peaks:
-    input:
-        coverage=f"{coverage_folder}/{{sample}}_{{side}}_coverage.bedgraph",
-        script=f"{scripts_dir}/find_peaks.py",
-    output:
-        f"{peaks_folder}/{{sample}}_{{side}}.bed",
-    log:
-        "logs/find_peaks/{sample}_{side}.log",
-    benchmark:
-        "benchmarks/find_peaks/{sample}_{side}.tsv"
-    conda:
-        "../envs/all.yaml"
-    threads: 1
-    params:
-        cluster_arg=(
-            "--no-cluster" if config["use_only_read_junctions"] else "--cluster"
-        ),
-        auto_li_arg=(
-            "--auto-li" if config["use_only_read_junctions"] else "--no-auto-li"
-        ),
-        min_peak_width=config["min_peak_width"],
-        min_peak_reads=config["min_peak_reads"],
-        min_peak_frac=config["min_peak_frac"],
-        min_peak_dist=config["min_peak_dist"],
-        min_peak_positions=config["min_peak_positions"],
-        cassette_name=config["cassette_name"],
-    shell:
-        """
-        python3 {input.script} -i {input.coverage} -o {output} \
-            {params.cluster_arg} {params.auto_li_arg} \
-            --min-peak-width {params.min_peak_width} --min-peak-frac {params.min_peak_frac} \
-            --min-peak-reads {params.min_peak_reads} --min-peak-dist {params.min_peak_dist} \
-            --min-peak-positions {params.min_peak_positions} \
-            --ignore-chrom {params.cassette_name} \
-            >{log[0]} 2>&1
-        """
+if config["peak_caller"] == "junction_tiered":
+
+    rule find_peaks:
+        input:
+            pairs=f"{pairs_folder}/{{sample}}_{{side}}.pairs",
+            genome=refgen_path,
+            genome_index=config["fasta_index_file"],
+            script=f"{scripts_dir}/find_peaks_junctions.py",
+        output:
+            peaks=f"{peaks_folder}/{{sample}}_{{side}}.bed",
+            evidence=f"{peaks_folder}/{{sample}}_{{side}}_evidence.tsv",
+        log:
+            "logs/find_peaks/{sample}_{side}.log",
+        benchmark:
+            "benchmarks/find_peaks/{sample}_{side}.tsv"
+        conda:
+            "../envs/all.yaml"
+        threads: 1
+        params:
+            junction_jitter=config["junction_jitter"],
+            max_fragment=config["max_fragment"],
+            min_junction_frags=config["min_junction_frags"],
+            min_junction_mapq=config["min_junction_mapq"],
+            motif_max_support=config["motif_max_support"],
+            insertion_seq=config["insertion_seq"],
+            min_peak_width=config["min_peak_width"],
+            min_peak_reads=config["min_peak_reads"],
+            min_peak_frac=config["min_peak_frac"],
+            min_peak_dist=config["min_peak_dist"],
+            min_peak_positions=config["min_peak_positions"],
+            cassette_name=config["cassette_name"],
+        shell:
+            """
+            python3 {input.script} -i {input.pairs} --side {wildcards.side} \
+                -o {output.peaks} --output-detail {output.evidence} \
+                --junction-jitter {params.junction_jitter} \
+                --max-fragment {params.max_fragment} \
+                --min-junction-frags {params.min_junction_frags} \
+                --min-junction-mapq {params.min_junction_mapq} \
+                --motif-max-support {params.motif_max_support} \
+                --insertion-seq {params.insertion_seq} \
+                --genome {input.genome} --genome-index {input.genome_index} \
+                --min-peak-width {params.min_peak_width} --min-peak-frac {params.min_peak_frac} \
+                --min-peak-reads {params.min_peak_reads} --min-peak-dist {params.min_peak_dist} \
+                --min-peak-positions {params.min_peak_positions} \
+                --ignore-chrom {params.cassette_name} \
+                >{log[0]} 2>&1
+            """
+
+else:
+
+    rule find_peaks:
+        input:
+            coverage=f"{coverage_folder}/{{sample}}_{{side}}_coverage.bedgraph",
+            script=f"{scripts_dir}/find_peaks.py",
+        output:
+            f"{peaks_folder}/{{sample}}_{{side}}.bed",
+        log:
+            "logs/find_peaks/{sample}_{side}.log",
+        benchmark:
+            "benchmarks/find_peaks/{sample}_{side}.tsv"
+        conda:
+            "../envs/all.yaml"
+        threads: 1
+        params:
+            cluster_arg=("--no-cluster" if only_read_junctions else "--cluster"),
+            auto_li_arg=("--auto-li" if only_read_junctions else "--no-auto-li"),
+            min_peak_width=config["min_peak_width"],
+            min_peak_reads=config["min_peak_reads"],
+            min_peak_frac=config["min_peak_frac"],
+            min_peak_dist=config["min_peak_dist"],
+            min_peak_positions=config["min_peak_positions"],
+            cassette_name=config["cassette_name"],
+        shell:
+            """
+            python3 {input.script} -i {input.coverage} -o {output} \
+                {params.cluster_arg} {params.auto_li_arg} \
+                --min-peak-width {params.min_peak_width} --min-peak-frac {params.min_peak_frac} \
+                --min-peak-reads {params.min_peak_reads} --min-peak-dist {params.min_peak_dist} \
+                --min-peak-positions {params.min_peak_positions} \
+                --ignore-chrom {params.cassette_name} \
+                >{log[0]} 2>&1
+            """
 
 
 rule combine_peaks:

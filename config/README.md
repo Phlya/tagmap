@@ -28,6 +28,15 @@ fill in whatever the regex doesn't capture, or override it for a whole row.
 
 Both sheets take `#`-prefixed comment lines and blank rows.
 
+## Output paths
+
+Every stage's output folder (`fastq_folder`, `bams_folder`, `pairs_folder`, ...)
+and the `primer_position_file`/`fasta_index_file` can be set individually, but
+default to living under `results_folder` (itself defaulting to `results`), so
+usually just setting `results_folder` is enough to get a self-contained,
+namespaced results tree - only override an individual path if you want that
+one file somewhere else.
+
 ## Summary tables
 
 Besides the site calls, the workflow writes small TSV summaries to

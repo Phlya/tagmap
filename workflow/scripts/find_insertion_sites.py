@@ -29,7 +29,14 @@ argparser.add_argument("--output-for-ucsc", required=True)
 
 
 def determine_direction(series):
-    """Orientation of an insertion from the order of its two peaks."""
+    """Orientation of an insertion from the order of its two peaks.
+
+    A last resort, for peaks from a caller that could not say which way the
+    reads ran. It only works while the two sides land on different bases, which
+    they need not: both ITRs of one integration sit at the same motif, so a
+    caller that positions on the sequenced junction puts them on the very same
+    base and the order here becomes a coin toss.
+    """
     if series.shape[0] != 2:
         return "."
     if np.all(series.to_numpy() == np.asarray(["+", "-"])):
@@ -38,6 +45,18 @@ def determine_direction(series):
         return "+"
     else:
         return "."
+
+
+def cluster_orientation(group):
+    """Orientation of one cluster of peaks, preferring what the reads said."""
+    stated = {o for o in group.get("orientation", []) if o in ("+", "-")}
+    if len(stated) == 1:
+        return stated.pop()
+    if len(stated) > 1:
+        # The two sides of one insertion cannot face opposite ways, so this is
+        # two insertions merged, or noise. Better to say nothing.
+        return "."
+    return determine_direction(group["side"])
 
 
 def determine_sides(series):
@@ -88,7 +107,10 @@ if __name__ == "__main__":
         return_cluster_ids=True,
     )
 
-    peaks["strand"] = peaks.groupby(["cluster"])["side"].transform(determine_direction)
+    orientations = peaks.groupby("cluster").apply(
+        cluster_orientation, include_groups=False
+    )
+    peaks["strand"] = peaks["cluster"].map(orientations)
     peaks["site_sides"] = peaks.groupby(["cluster"])["side"].transform(determine_sides)
 
     peaks["start"] = peaks["cluster_start"]

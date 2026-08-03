@@ -15,7 +15,15 @@ argparser.add_argument("--output", "-o", type=str)
 argparser.add_argument("--output-genome-browser", type=str)
 args = argparser.parse_args()
 
-PEAK_COLUMNS = ["chrom", "start", "end", "counts", "fraction", "n_positions"]
+PEAK_COLUMNS = [
+    "chrom",
+    "start",
+    "end",
+    "counts",
+    "fraction",
+    "n_positions",
+    "orientation",
+]
 
 fwd = tagmaplib.read_peaks(args.fwd, columns=PEAK_COLUMNS)
 fwd["side"] = "+"
@@ -28,7 +36,17 @@ merged = tagmaplib.apply_blacklist(merged, args.blacklist)
 merged["sample"] = args.sample_name
 
 merged[
-    ["chrom", "start", "end", "sample", "counts", "side", "fraction", "n_positions"]
+    [
+        "chrom",
+        "start",
+        "end",
+        "sample",
+        "counts",
+        "side",
+        "fraction",
+        "n_positions",
+        "orientation",
+    ]
 ].sort_values(["chrom", "start", "end"]).to_csv(
     args.output, sep="\t", header=False, index=False
 )

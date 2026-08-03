@@ -1,0 +1,36 @@
+# Same CRE6 dataset as config_CRE6.yaml, but with peak-calling thresholds
+# loosened to call every distinct TA site rather than only high-confidence
+# clonal peaks. This is what's needed to compare against Mathias's own
+# per-site analysis (E2226_CRE6_txt_files) and the paper's reported
+# genome-wide hopping-distribution statistics, since that per-site table
+# keeps every site regardless of read count.
+samples_path: './config/samples_CRE6.tsv'
+
+refgen_path: '../SB_tagmentation_mapping/refgen_mathias/mm10_mathias.fa'
+chrom_sizes_path: '../SB_tagmentation_mapping/refgen_mathias/mm10_mathias_chromsizes.txt'
+chrom_sizes_path_no_cassette: '../../genomes/mm10/chromsizes.txt'
+
+do_fastqc: False
+trim: False
+
+mapper: 'bwa-mem2'
+
+dedup: False
+
+cassette_name: 'cassette'
+
+reverse_primer_sequence: 'aacgagttttaatgactccaactt'
+forward_primer_sequence: 'ggtgatcctaactgacctaagac'
+insertion_seq: "TA"
+
+peak_caller: 'coverage'
+
+# Peak calling: keep every site, no minimum-read/frac threshold
+min_peak_width: 1
+min_peak_reads: 1
+min_peak_frac: 0.0
+min_peak_dist: 1
+min_peak_positions: 1
+max_dist_between_sides: 100
+
+results_folder: 'results/CRE6_loose'

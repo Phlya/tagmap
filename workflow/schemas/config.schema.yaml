@@ -53,9 +53,6 @@ properties:
   reverse_primer_sequence:
     type: string
     description: As forward_primer_sequence, for the other end of the cassette.
-  primer_overhang:
-    type: string
-    description: 5' overhang of the primers, likely the Nextera N7 sequence.
   insertion_seq:
     type: string
     default: "TA"
@@ -78,17 +75,84 @@ properties:
   dedup:
     type: boolean
     default: true
-  use_only_read_junctions:
-    type: boolean
-    default: false
-    description: >
-      Keep only pairs that read through the end of the cassette, rather than
-      all pairs anchored at the ITR primer.
   blacklist:
     type: string
     description: Peaks overlapping this BED are dropped. Unset to disable.
 
   # --------------------------------------------------------- peak calling ---
+  peak_caller:
+    type: string
+    enum: ["coverage", "coverage_junctions", "junction_tiered"]
+    default: "junction_tiered"
+    description: >
+      Which pairs are used, and how, in one setting.
+
+      A TagMap fragment runs [tagmentation site] --genome-- [insertion site]
+      --cassette-- [ITR primer]. When a read is long enough to carry on past the
+      junction, the first genomic base it reaches is the insertion site itself,
+      the same base for every molecule. When it is not, the only genomic
+      coordinate in the pair comes from the other read, which starts at the
+      tagmentation cut - a different random position per molecule.
+
+      "coverage" clusters those genomic coordinates and cuts on read count,
+      without distinguishing the two. Where reads rarely span the junction that
+      makes one peak per molecule: on the 2G6 MiSeq run, 30,053 sites for a pool
+      of ~800.
+
+      "coverage_junctions" first throws away every pair that did not read
+      through, then does the same clustering with an automatic intensity
+      threshold. Positions are exact, but everything the shorter reads saw is
+      gone, and the threshold drops rare sites.
+
+      "junction_tiered" keeps both kinds and uses each for what it is: junctions
+      place a site to the base and are believed on their own, ITR-anchored pairs
+      may only corroborate one, or form a peak that must still clear
+      min_peak_reads/min_peak_frac. It also counts distinct tagmentation
+      positions rather than reads, so abundance is captured molecules instead of
+      PCR. It is the default, and needs no up-front decision about read length.
+  junction_jitter:
+    type: integer
+    default: 2
+    description: >
+      junction_tiered only. Junction positions this close apart are one site,
+      absorbing mapping wobble. Keep it small: real neighbouring insertions in
+      a local re-mobilisation assay can be tens of bases apart.
+  max_fragment:
+    type: integer
+    default: 1000
+    description: >
+      junction_tiered only. Longest junction-to-tagmentation distance a pair
+      may span, i.e. the largest library fragment. Bounds how far an
+      ITR-anchored pair may reach to corroborate a junction.
+  min_junction_frags:
+    type: integer
+    default: 1
+    description: >
+      junction_tiered only. Distinct tagmentation positions among
+      junction-spanning reads needed to call a site. The default of 1 is the
+      point of the tiering - one read that spelled out the junction is proof of
+      an integration, however rare it is in the pool.
+  min_junction_mapq:
+    type: integer
+    default: 0
+    description: >
+      junction_tiered only. Junction pairs below this MAPQ are dropped rather
+      than trusted on their own. Worth raising above 0 if single-read sites in
+      repeats are a concern.
+  motif_max_support:
+    type: integer
+    default: 0
+    description: >
+      junction_tiered only. Junction peaks supported by this many distinct
+      molecules or fewer must also carry insertion_seq at the junction, which is
+      what a genuine integration looks like. 0 disables the check. It is what
+      makes min_junction_frags: 1 safe: on the 2G6 long-read library a singleton
+      junction carries a TA only 48% of the time against a 23% background - so
+      barely a third can be real - while junctions seen on four or more
+      molecules reach 90%. Asking thin peaks to look like integrations keeps the
+      genuinely rare ones without the chimeras, and calibrates itself, since the
+      motif rate against background is a false-discovery estimate needing no
+      labelled sites.
   min_peak_width:
     type: integer
     default: 1
@@ -101,6 +165,14 @@ properties:
   min_peak_dist:
     type: integer
     default: 1000
+    description: >
+      Same-side peak positions within this distance are merged into one peak.
+      Suited to a genome-wide screen, where independent insertions land far
+      apart and anything closer is read scatter around one true site. Turn
+      this down (e.g. to ~5) for an assay that packs many independent
+      insertions into one small locus (e.g. local re-mobilization of a
+      cassette), where true neighbouring sites can be under 100bp apart -
+      left at the default, such sites get silently merged and undercounted.
   min_peak_positions:
     type: integer
     default: 1
@@ -109,7 +181,8 @@ properties:
     default: 100
     description: >
       Peaks from the forward and reverse side of the cassette within this
-      distance are combined into one insertion site.
+      distance are combined into one insertion site. Same genome-wide-vs-
+      dense-locus tradeoff as min_peak_dist above - turn down together.
 
   # ------------------------------------------------------- Sanger analysis --
   sanger_basecaller:
@@ -200,53 +273,60 @@ properties:
     description: Distance within which a Sanger and an NGS site are the same site.
 
   # --------------------------------------------------------------- outputs --
+  results_folder:
+    type: string
+    default: "results"
+    description: >
+      Base folder for every output below that is not given its own path.
+      Usually the only one of the output settings worth setting - give this
+      one path and get a self-contained, namespaced results tree; the rest
+      only need overriding if you want a particular file somewhere else.
   fastq_folder:
     type: string
-    default: "results/fastq"
+    description: Defaults to "{results_folder}/fastq".
   bams_folder:
     type: string
-    default: "results/bams"
+    description: Defaults to "{results_folder}/bams".
   pairs_folder:
     type: string
-    default: "results/pairs"
+    description: Defaults to "{results_folder}/pairs".
   coverage_folder:
     type: string
-    default: "results/coverage"
+    description: Defaults to "{results_folder}/coverage".
   peaks_folder:
     type: string
-    default: "results/peaks"
+    description: Defaults to "{results_folder}/peaks".
   insertion_sites_folder:
     type: string
-    default: "results/insertion_sites"
+    description: Defaults to "{results_folder}/insertion_sites".
   sanger_folder:
     type: string
-    default: "results/sanger"
+    description: Defaults to "{results_folder}/sanger".
   validation_folder:
     type: string
-    default: "results/validation"
+    description: Defaults to "{results_folder}/validation".
   stats_folder:
     type: string
-    default: "results/stats"
     description: >
       Summary tables (mobilization rate, site sidedness, Sanger QC, per-clone
-      coverage, cross-validation) and the combined report.md.
+      coverage, cross-validation) and the combined report.md. Defaults to
+      "{results_folder}/stats".
   primer_position_file:
     type: string
-    default: "results/primer_positions.json"
+    description: Defaults to "{results_folder}/primer_positions.json".
   original_site_file:
     type: string
-    default: "results/original_site.json"
     description: >
       Resolved chrom/pos of the original insertion (see
       original_insertion_site/original_insertion_upstream_seq). Only written
-      when one of those is set.
+      when one of those is set. Defaults to "{results_folder}/original_site.json".
   fasta_index_file:
     type: string
-    default: "results/refgen.fai"
     description: >
       samtools/pysam .fai index of refgen_path, used to look up sequence at
       insertion sites. Kept here rather than next to the FASTA so that a
-      shared, read only reference genome still works.
+      shared, read only reference genome still works. Defaults to
+      "{results_folder}/refgen.fai".
 
 required:
   - refgen_path

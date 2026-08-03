@@ -53,6 +53,26 @@ rule fasta_index:
         """
 
 
+rule make_chromsizes:
+    input:
+        refgen_path=refgen_path,
+    output:
+        chrom_sizes_path=config["chrom_sizes_path"],
+    log:
+        "logs/make_chromsizes/log.log",
+    conda:
+        "../envs/all.yaml"
+    threads: 8
+    shell:
+        """
+        chromsize --sequence {input.refgen_path} \
+            -o $(dirname {output.chrom_sizes_path}) \
+            -p $(basename {output.chrom_sizes_path}) \
+            -t {threads} \
+            >{log[0]} 2>&1
+        """
+
+
 rule find_original_site:
     input:
         script=f"{scripts_dir}/find_original_site.py",

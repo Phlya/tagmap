@@ -26,15 +26,13 @@ cassette_name: 'SB_cargo_CTCF'
 # If multiple PCRs were used, use the sequence of the primers used in the last step
 reverse_primer_sequence: 'aacgagttttaatgactccaactt'
 forward_primer_sequence: 'ggtgatcctaactgacctaagac'
-# 5' overhang of the primers above, likely Nextera N7 sequence
-primer_overhang: 'GTCTCGTGGGCTCGGAGATGTGTATAAGAGACAG'
 # Sequence of the adapters loaded onto Tn5 transposase, likely Nextera N5 sequence
 # adapter_seq: 'TCGTCGGCAGCGTCAGATGTGTATAAGAGACAG'
 
 # Sequence used by the transposon for integration; e.g. TA for SB, TTAA for PB
 insertion_seq: "TA"
 
-use_only_read_junctions: False
+peak_caller: 'coverage'
 
 # Peak calling (NGS only)
 min_peak_width: 1
@@ -57,13 +55,5 @@ sanger_max_dist: 100
 validate_sanger_with_ngs: True
 validation_max_dist: 500
 
+results_folder: '../Data/Processed/T1/'
 fastq_folder: '../Data/Raw/T1/fastq/'
-bams_folder: '../Data/Processed/T1/bams/'
-primer_position_file: '../Data/Processed/T1/primer_positions.json'
-pairs_folder: '../Data/Processed/T1/pairs/'
-coverage_folder: '../Data/Processed/T1/coverage/'
-peaks_folder: '../Data/Processed/T1/peaks/'
-insertion_sites_folder: '../Data/Processed/T1/insertion_sites/'
-sanger_folder: '../Data/Processed/T1/sanger/'
-validation_folder: '../Data/Processed/T1/validation/'
-stats_folder: '../Data/Processed/T1/stats/'

@@ -1,0 +1,41 @@
+# Same as config_CRE6_loose.yaml, but with max_dist_between_sides and
+# min_peak_dist tightened from their sparse-genome-wide-screen defaults
+# (100/1000) down to 5bp. CRE6 is a local re-mobilization assay: most
+# integrations land within a couple Mb of chr3:34.6Mb (the original landing
+# pad), where true neighbouring sites can be under 100bp apart (median
+# nearest-neighbour distance in Mathias Eder's own per-read calls is ~740bp,
+# 18% of sites within 100bp of a neighbour). At the default distance the
+# pipeline was silently merging distinct nearby sites and undercounting
+# chr3 specifically (2,814 sites here vs the ~3,480 in the ground truth).
+# With max_dist_between_sides/min_peak_dist=5, chr3 comes out to 3,509 -
+# a 0.8% difference from ground truth. This is the recommended config for
+# this dataset; config_CRE6_loose.yaml is kept only to show the effect.
+samples_path: './config/samples_CRE6.tsv'
+
+refgen_path: '../SB_tagmentation_mapping/refgen_mathias/mm10_mathias.fa'
+chrom_sizes_path: '../SB_tagmentation_mapping/refgen_mathias/mm10_mathias_chromsizes.txt'
+chrom_sizes_path_no_cassette: '../../genomes/mm10/chromsizes.txt'
+
+do_fastqc: False
+trim: False
+
+mapper: 'bwa-mem2'
+
+dedup: False
+
+cassette_name: 'cassette'
+
+reverse_primer_sequence: 'aacgagttttaatgactccaactt'
+forward_primer_sequence: 'ggtgatcctaactgacctaagac'
+insertion_seq: "TA"
+
+peak_caller: 'coverage'
+
+min_peak_width: 1
+min_peak_reads: 1
+min_peak_frac: 0.0
+min_peak_dist: 5
+min_peak_positions: 1
+max_dist_between_sides: 5
+
+results_folder: 'results/CRE6_loose2'

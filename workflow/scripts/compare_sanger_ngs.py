@@ -41,12 +41,19 @@ def nearest(sanger, ngs, prefix, extra_columns, max_dist):
             {c: pd.Series([pd.NA] * sanger.shape[0], index=sanger.index) for c in columns}
         )
 
-    closest = bioframe.closest(
-        sanger[["chrom", "start", "end"]],
-        ngs,
-        suffixes=("", "_ngs"),
-        k=1,
-    ).set_index(sanger.index)
+    # bioframe.closest returns its hits grouped by chromosome rather than in
+    # the order it was handed the query, and drops queries on a chromosome the
+    # other frame does not have. Taking the rows as they come and stamping the
+    # Sanger index onto them therefore pairs most sites with some other site's
+    # nearest neighbour, so carry the row each hit belongs to through the call.
+    query = sanger[["chrom", "start", "end"]].copy()
+    query["sanger_row"] = np.arange(sanger.shape[0])
+    closest = (
+        bioframe.closest(query, ngs, suffixes=("", "_ngs"), k=1)
+        .set_index("sanger_row")
+        .reindex(np.arange(sanger.shape[0]))
+    )
+    closest.index = sanger.index
 
     out = pd.DataFrame(index=sanger.index)
     out[f"{prefix}_dist"] = closest["distance"]

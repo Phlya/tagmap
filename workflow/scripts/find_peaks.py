@@ -36,7 +36,7 @@ coverage = pd.read_csv(
     args.input,
     sep="\t",
     header=None,
-    names=["chrom", "start", "end", "coverage", "fraction"],
+    names=["chrom", "start", "end", "coverage", "fraction", "orientation"],
     dtype={"chrom": str},
 )
 
@@ -51,15 +51,33 @@ if args.cluster:
     merged = bioframe.merge(coverage, min_dist=args.min_peak_dist)
     coverage = (
         bioframe.overlap(merged, coverage, how="left")[
-            ["chrom", "start", "end", "coverage_", "fraction_", "n_intervals"]
+            [
+                "chrom",
+                "start",
+                "end",
+                "coverage_",
+                "fraction_",
+                "n_intervals",
+                "orientation_",
+            ]
         ]
         .groupby(["chrom", "start", "end"])
-        .agg({"coverage_": "sum", "fraction_": "sum", "n_intervals": "first"})
+        .agg(
+            {
+                "coverage_": "sum",
+                "fraction_": "sum",
+                "n_intervals": "first",
+                # One peak has one orientation; positions that cannot agree on
+                # it are better left saying nothing.
+                "orientation_": lambda o: o.mode().iat[0] if o.nunique() == 1 else ".",
+            }
+        )
         .reset_index()
         .rename(
             columns={
                 "fraction_": "fraction",
                 "n_intervals": "n_positions",
+                "orientation_": "orientation",
             }
         )
     )
@@ -92,4 +110,7 @@ coverage = coverage[
     & (coverage["n_positions"] >= args.min_peak_positions)
 ]
 
+coverage = coverage[
+    ["chrom", "start", "end", "n_reads", "fraction", "n_positions", "orientation"]
+]
 coverage.to_csv(args.output, sep="\t", header=False, index=False)

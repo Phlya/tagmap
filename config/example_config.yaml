@@ -29,8 +29,6 @@ cassette_name: 'mobilized_enhancer'
 # Please only specify the portion of the primers that binds the ITRs
 forward_primer_sequence: 'GTACGTCACAATATGATTATCTTTCTAG'
 reverse_primer_sequence: 'CGTCAATTTTACGCAGACTATC'
-# 5' overhang of the primers above, likely Nextera N7 sequence
-# primer_overhang: 'GTCTCGTGGGCTCGGAGATGTGTATAAGAGACAG'
 # Sequence of the adapters loaded onto Tn5 transposase, likely Nextera N5 sequence
 # Not used at the moment
 # adapter_seq: 'TCGTCGGCAGCGTCAGATGTGTATAAGAGACAG'
@@ -38,12 +36,54 @@ reverse_primer_sequence: 'CGTCAATTTTACGCAGACTATC'
 # Sequence used by the transposon for integration; e.g. TA for SB, TTAA for PB
 insertion_seq: "TTAA"
 
-use_only_read_junctions: False
 
 # Peak calling (NGS only)
+# Which pairs get used, and how. A fragment runs
+#   [tagmentation site] --genome-- [insertion site] --cassette-- [ITR primer]
+# so a read long enough to carry on past the junction reports the insertion site
+# itself, the same base for every molecule, while a shorter one only gives the
+# tagmentation cut - a different random position each time, a median ~130bp off.
+#   'coverage'           clusters both kinds together and cuts on read count.
+#                        Where reads rarely span the junction that makes one
+#                        peak per molecule (30,053 sites for a pool of ~800).
+#   'coverage_junctions' throws the shorter ones away first, then thresholds
+#                        automatically - exact, but blind to most of the library
+#                        and to rare sites.
+#   'junction_tiered'    keeps both and uses each for what it is: junctions
+#                        place sites and are believed alone, anchored pairs only
+#                        corroborate or must clear the thresholds below. Counts
+#                        distinct tagmentation positions, so they are captured
+#                        molecules rather than PCR. No up-front decision needed.
+peak_caller: 'junction_tiered'
+# junction_tiered only:
+junction_jitter: 2          # junctions this close apart are one site
+max_fragment: 1000          # longest fragment an anchored pair may span
+min_junction_frags: 1       # one read through the junction is enough
+min_junction_mapq: 1        # raise to distrust single reads in repeats
+# ...as long as a thinly supported junction also looks like an integration:
+# peaks on this many molecules or fewer must carry insertion_seq at the
+# junction. Measured on the 2G6 long reads, singleton junctions have a TA only
+# 48% of the time against a 23% background, so barely a third are real, while
+# 4+ molecule junctions reach 90%. 0 disables the check.
+motif_max_support: 3
+
 min_peak_width: 200
 min_peak_reads: 10
 min_peak_frac: 0.01
+# Same-side peak positions this close are merged into one peak. The default
+# below suits a genome-wide screen where independent insertions are expected
+# to land far apart, so any read scatter near a summit is noise worth
+# absorbing. For an assay that intentionally packs many independent
+# insertions into one small locus (e.g. mapping where a mobilized
+# enhancer/reporter re-integrates within a few Mb of its start), true
+# neighbouring sites can sit under 100bp apart - checked here against ~3,500
+# manually-curated sites at one such locus, whose nearest-neighbour distance
+# has a median of ~740bp and 18% within 100bp of each other. Leaving
+# min_peak_dist/max_dist_between_sides at their default there silently
+# merges distinct sites and undercounts specifically in the dense region
+# (verified: dropped a locus's true site count by ~19% while leaving
+# everywhere else nearly unaffected). Turn both down to ~5bp for that kind
+# of experiment; the defaults below are for the sparse, genome-wide case.
 min_peak_dist: 1000
 min_peak_positions: 1
 # Peaks from the two sides of the cassette this close are one insertion site
@@ -85,14 +125,22 @@ original_insertion_max_dist: 25
 validate_sanger_with_ngs: True
 validation_max_dist: 500
 
+# Every individual output path below defaults to living under here, so this
+# is usually the only one of the lot worth setting.
+results_folder: '../Data/Processed/T1/'
+# None of the following are necessary - each is shown commented out with the
+# value it already gets from results_folder above. Uncomment one only to
+# send that particular file/folder somewhere else, as is done here for
+# fastq_folder, to keep the merged-but-untrimmed fastqs with the raw ones
+# rather than under Processed.
 fastq_folder: '../Data/Raw/T1/fastq/'
-bams_folder: '../Data/Processed/T1/bams/'
-primer_position_file: '../Data/Processed/T1/primer_positions.json'
-pairs_folder: '../Data/Processed/T1/pairs/'
-coverage_folder: '../Data/Processed/T1/coverage/'
-peaks_folder: '../Data/Processed/T1/peaks/'
-insertion_sites_folder: '../Data/Processed/T1/insertion_sites/'
-sanger_folder: '../Data/Processed/T1/sanger/'
-validation_folder: '../Data/Processed/T1/validation/'
-# Summary tables and the combined report.md
-stats_folder: '../Data/Processed/T1/stats/'
+# bams_folder: '../Data/Processed/T1/bams'
+# pairs_folder: '../Data/Processed/T1/pairs'
+# coverage_folder: '../Data/Processed/T1/coverage'
+# peaks_folder: '../Data/Processed/T1/peaks'
+# insertion_sites_folder: '../Data/Processed/T1/insertion_sites'
+# sanger_folder: '../Data/Processed/T1/sanger'
+# validation_folder: '../Data/Processed/T1/validation'
+# stats_folder: '../Data/Processed/T1/stats'
+# primer_position_file: '../Data/Processed/T1/primer_positions.json'
+# fasta_index_file: '../Data/Processed/T1/refgen.fai'

@@ -1,0 +1,50 @@
+# CRE6 again with peak_caller: junction_tiered, as the second, independent test
+# of the tiering - here against Mathias Eder's own per-read calls (4,758 sites,
+# 3,480 of them on chr3) rather than against Sanger clones.
+#
+# config_CRE6_loose2.yaml got chr3 to within 0.8% of that truth by turning the
+# merge distances down, but stayed ~27% over on the rest of the genome, and
+# that residue is what tiering should reach: with 150bp reads, 61% of
+# forward-side and 99.7% of reverse-side pairs read through the cassette/genome
+# junction, so most sites can be placed exactly and the remainder held to a
+# corroboration threshold instead of each becoming its own peak.
+#
+# dedup is off for this dataset, which the tiered caller handles by counting
+# distinct tagmentation positions rather than reads - PCR copies of one
+# fragment share both ends, so they collapse on their own.
+samples_path: './config/samples_CRE6.tsv'
+
+refgen_path: '../SB_tagmentation_mapping/refgen_mathias/mm10_mathias.fa'
+chrom_sizes_path: '../SB_tagmentation_mapping/refgen_mathias/mm10_mathias_chromsizes.txt'
+chrom_sizes_path_no_cassette: '../../genomes/mm10/chromsizes.txt'
+
+do_fastqc: False
+trim: False
+
+mapper: 'bwa-mem2'
+
+dedup: False
+
+cassette_name: 'cassette'
+
+reverse_primer_sequence: 'aacgagttttaatgactccaactt'
+forward_primer_sequence: 'ggtgatcctaactgacctaagac'
+insertion_seq: "TA"
+
+
+peak_caller: 'junction_tiered'
+junction_jitter: 2
+max_fragment: 1000
+min_junction_frags: 1
+min_junction_mapq: 0
+# Thin junction peaks must also carry a TA at the junction to be believed.
+motif_max_support: 3
+
+min_peak_width: 1
+min_peak_reads: 2
+min_peak_frac: 0.0
+min_peak_dist: 5
+min_peak_positions: 1
+max_dist_between_sides: 5
+
+results_folder: 'results/CRE6_tiered'

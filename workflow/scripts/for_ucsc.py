@@ -20,13 +20,14 @@ if __name__ == "__main__":
     bg = pd.read_table(
         args.input,
         header=None,
-        names=["chrom", "start", "end", "value", "coverage"],
+        names=["chrom", "start", "end", "value", "coverage", "orientation"],
         dtype={
             "chrom": str,
             "start": np.int64,
             "end": np.int64,
             "value": np.int64,
             "coverage": np.float32,
+            "orientation": str,
         },
     )
     chromsizes = bioframe.read_chromsizes(args.chromsizes)
