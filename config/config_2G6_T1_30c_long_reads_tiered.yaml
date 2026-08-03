@@ -1,0 +1,66 @@
+# The long-read 2G6 run again, this time with peak_caller: junction_tiered.
+#
+# The three earlier runs showed the pipeline forced into an all-or-nothing
+# choice: keep only pairs that read through the cassette/genome junction
+# (827 sites, 78% of the Sanger clones confirmed) or keep everything (2,383
+# sites, 62%). Neither is right, because the two kinds of pair carry different
+# information: a junction pair's genomic 5' end is the insertion site to the
+# base, an ITR-anchored pair's is a tagmentation site a median ~130bp away.
+# junction_tiered uses each for what it is - junctions place sites and are
+# believed alone, anchored pairs only corroborate.
+samples_path: './config/samples_2G6_T1_30c_long_reads.tsv'
+sanger_samples_path: './config/sanger_samples_2G6_feb2025.tsv'
+
+refgen_path: '../SB_tagmentation_mapping/refgen_2G6/mm10_SB_CTCF.fa'
+chrom_sizes_path: '../SB_tagmentation_mapping/refgen_2G6/mm10_SB_CTCF_chromsizes.txt'
+chrom_sizes_path_no_cassette: '../../genomes/mm10/chromsizes.txt'
+
+do_fastqc: False
+trim: False
+
+mapper: 'bwa-mem2'
+
+dedup: True
+
+cassette_name: 'SB_cargo_CTCF'
+# Contigs of the reference that are construct rather than genome, so never
+# real integration sites. Without these the founder locus - which lives
+# inside the LacO cassette, not in mm10 - is reported as an insertion site.
+construct_contigs: ['mobilized_SB_LacO_cassette', 'TetO_3xCTCF_cassette']
+
+reverse_primer_sequence: 'aacgagttttaatgactccaactt'
+forward_primer_sequence: 'TCCTAACTGACCTAAGACAGG'
+primer_overhang: 'GTCTCGTGGGCTCGGAGATGTGTATAAGAGACAG'
+
+insertion_seq: "TA"
+
+
+peak_caller: 'junction_tiered'
+junction_jitter: 2
+max_fragment: 1000
+min_junction_frags: 1
+min_junction_mapq: 0
+# Thin junction peaks must also carry a TA at the junction to be believed.
+motif_max_support: 3
+
+min_peak_width: 1
+# Only reached by peaks with no junction behind them: those are a guess at a
+# position, so ask for two independent molecules before believing one.
+min_peak_reads: 2
+min_peak_frac: 0.0
+min_peak_dist: 500
+min_peak_positions: 1
+max_dist_between_sides: 2
+
+sanger_basecaller: 'abi-trim'
+sanger_min_mapq: 30
+sanger_name_regex: '(?P<well>[A-H]\d{2})_\d+_(?P<direction>SB_fwd_seq|852)'
+sanger_direction_map:
+  SB_fwd_seq: forward
+  "852": reverse
+sanger_max_dist: 100
+
+validate_sanger_with_ngs: True
+validation_max_dist: 500
+
+results_folder: 'results/2G6_T1_30c_long_reads_tiered'

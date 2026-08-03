@@ -1,0 +1,44 @@
+# config_1B3_Dec2025.yaml from SB_tagmentation_mapping/tagmap, ported onto the
+# current pipeline: paths rebased, sample sheet renamed to the current
+# schema, and the peak-calling block replaced by the tiered caller with
+# the settings validated against the 2G6 Sanger clones and Mathias
+# Eder's CRE6 calls.
+#
+# The original settings were:
+#   {'use_only_read_junctions': True, 'min_peak_width': 1, 'min_peak_reads': 1, 'min_peak_frac': 0.0, 'min_peak_dist': 500, 'min_peak_positions': 1, 'max_dist_between_sides': 2}
+# Those thresholds were tuned for a caller that could not tell a
+# sequenced junction from a tagmentation cut, so they are not carried
+# over; under junction_tiered they would only ever apply to peaks with
+# no junction behind them.
+
+samples_path: ./config/samples_old_1B3_Dec2025.tsv
+refgen_path: ../SB_tagmentation_mapping/refgen_2G6/mm10_SB_CTCF.fa
+chrom_sizes_path: ../SB_tagmentation_mapping/refgen_2G6/mm10_SB_CTCF_chromsizes.txt
+chrom_sizes_path_no_cassette: ../../genomes/mm10/chromsizes.txt
+do_fastqc: false
+trim: true
+trim_args: -g
+mapper: bwa-mem2
+dedup: true
+cassette_name: SB_cargo_CTCF
+# Contigs of the reference that are construct rather than genome, so never
+# real integration sites. Without these the founder locus - which lives
+# inside the LacO cassette, not in mm10 - is reported as an insertion site.
+construct_contigs: ['mobilized_SB_LacO_cassette', 'TetO_3xCTCF_cassette']
+forward_primer_sequence: TCCTAACTGACCTAAGACAGG
+reverse_primer_sequence: aacgagttttaatgactccaactt
+primer_overhang: GTCTCGTGGGCTCGGAGATGTGTATAAGAGACAG
+insertion_seq: TA
+peak_caller: junction_tiered
+junction_jitter: 2
+max_fragment: 1000
+min_junction_frags: 1
+min_junction_mapq: 0
+motif_max_support: 3
+min_peak_width: 1
+min_peak_reads: 2
+min_peak_frac: 0.0
+min_peak_dist: 500
+min_peak_positions: 1
+max_dist_between_sides: 2
+results_folder: results/old_1B3_Dec2025

@@ -19,7 +19,7 @@ reverse_primer_sequence: 'AACGAGTTTTAATGACTCCAACTT'
 
 insertion_seq: 'TA'
 
-use_only_read_junctions: False
+peak_caller: 'junction_tiered'
 
 # The test library is small, so the thresholds have to be too
 min_peak_width: 1

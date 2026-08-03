@@ -1,3 +1,4 @@
+import functools
 import glob
 import json
 import os
@@ -7,7 +8,22 @@ import numpy as np
 import pandas as pd
 from snakemake.utils import validate
 
+if "use_only_read_junctions" in config:
+    raise ValueError(
+        "use_only_read_junctions has been folded into peak_caller, so that one "
+        "setting decides which pairs are used and how, instead of two that had "
+        "to agree. Replace it with peak_caller: 'coverage' (was False), "
+        "'coverage_junctions' (was True), or 'junction_tiered' - the default, "
+        "which needs no such choice because it tiers the pairs itself. See "
+        "workflow/schemas/config.schema.yaml for what each one does."
+    )
+
 validate(config, schema="../schemas/config.schema.yaml")
+
+# Only the pairs that read through the cassette/genome junction are of any use
+# to the coverage caller's junction mode; the tiered caller sorts them out for
+# itself and so needs to be handed both kinds.
+only_read_junctions = config["peak_caller"] == "coverage_junctions"
 
 # Every output path below can be set individually, but defaults to living
 # under results_folder, so that in the common case one path is enough for a
@@ -43,20 +59,33 @@ insertion_sites_folder = normpath(config["insertion_sites_folder"])
 sanger_folder = normpath(config["sanger_folder"])
 validation_folder = normpath(config["validation_folder"])
 
-chromsizes = pd.read_table(
-    config["chrom_sizes_path"],
-    header=None,
-    sep="\t",
-    index_col=0,
-    names=["chrom", "size"],
-)
-if config["cassette_name"] not in chromsizes.index:
-    raise ValueError(
-        f"Cassette {config['cassette_name']!r} is not in "
-        f"{config['chrom_sizes_path']}. cassette_name must name a contig of "
-        "the reference genome."
+@functools.cache
+def cassette_length():
+    """Length of the cassette contig, in chrom_sizes_path.
+
+    Deferred rather than read as soon as the config is parsed (like
+    construct_contigs below), because chrom_sizes_path need not exist yet at
+    that point - the make_chromsizes rule can still be the one to build it,
+    as an ordinary dependency of whichever rule first calls this, rather than
+    something the user has to generate by hand before the DAG can even be
+    built. Sanger-only runs never call this at all, so for them
+    chrom_sizes_path need not exist on disk, only be set.
+    """
+    chromsizes = pd.read_table(
+        config["chrom_sizes_path"],
+        header=None,
+        sep="\t",
+        index_col=0,
+        names=["chrom", "size"],
     )
-cassette_length = chromsizes.loc[config["cassette_name"]]["size"]
+    if config["cassette_name"] not in chromsizes.index:
+        raise ValueError(
+            f"Cassette {config['cassette_name']!r} is not in "
+            f"{config['chrom_sizes_path']}. cassette_name must name a contig of "
+            "the reference genome."
+        )
+    return chromsizes.loc[config["cassette_name"]]["size"]
+
 
 # Everything that is construct rather than genome, and so never a real
 # integration site.
@@ -183,25 +212,35 @@ def get_filter(side, primer_positions_file):
         primer_positions = json.load(f)
     walk_pair_type = (
         '(walk_pair_type in ["R1", "R2", "R1&2"]) and'
-        if config["use_only_read_junctions"]
+        if only_read_junctions
         else ""
     )
     forward_ITR_primer_position = primer_positions["forward_ITR_primer_position"]
     reverse_ITR_primer_position = primer_positions["reverse_ITR_primer_position"]
-    selection_3prime_forward_all = f"(abs(pos2-min({cassette_length}, {forward_ITR_primer_position}+read_len2))<=2)"
-    selection_3prime_reverse_all = (
-        f"(abs(pos2-max(0, {reverse_ITR_primer_position}-read_len2))<=2)"
-    )
-    selection_3prime_forward_readthrough = f"(abs(pos2-{cassette_length})<=2)"
+    selection_3prime_forward_readthrough = f"(abs(pos2-{cassette_length()})<=2)"
     selection_3prime_reverse_readthrough = f"(pos2<=2)"
+    # "All" has to be a superset of the readthrough case. Writing it as the
+    # single position min(cassette end, primer + read length) is only that when
+    # the reads are long enough to reach the end of the cassette; with shorter
+    # ones the min picks where a read that stopped inside the cassette ends,
+    # and silently throws away every pair that did read through - the pairs the
+    # junction_tiered caller relies on most.
+    selection_3prime_forward_all = (
+        f"((abs(pos2-min({cassette_length()}, {forward_ITR_primer_position}+read_len2))<=2)"
+        f" or {selection_3prime_forward_readthrough})"
+    )
+    selection_3prime_reverse_all = (
+        f"((abs(pos2-max(0, {reverse_ITR_primer_position}-read_len2))<=2)"
+        f" or {selection_3prime_reverse_readthrough})"
+    )
     selection_3prime_forward = (
         selection_3prime_forward_readthrough
-        if config["use_only_read_junctions"]
+        if only_read_junctions
         else selection_3prime_forward_all
     )
     selection_3prime_reverse = (
         selection_3prime_reverse_readthrough
-        if config["use_only_read_junctions"]
+        if only_read_junctions
         else selection_3prime_reverse_all
     )
     selection_3prime = (
@@ -233,6 +272,7 @@ def workflow_targets():
         targets += [
             f"{peaks_folder}/all_peaks.bed",
             f"{insertion_sites_folder}/all_sites.bed",
+            f"{insertion_sites_folder}/sample_summary.tsv",
         ]
     if sanger_sample_list:
         targets += expand(

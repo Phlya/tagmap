@@ -48,3 +48,52 @@ rule find_insertion_sites:
             -o {output.output} --output-for-ucsc {output.for_ucsc} \
             >{log[0]} 2>&1
         """
+
+
+# Only the junction_tiered caller records a per-peak tier, so only it has
+# evidence files for sample_summary.py to read a junction/anchor split from.
+_summary_evidence = (
+    expand(
+        f"{peaks_folder}/{{sample}}_{{side}}_evidence.tsv",
+        sample=sample_list,
+        side=["forward", "reverse"],
+    )
+    if config["peak_caller"] == "junction_tiered"
+    else []
+)
+
+
+rule sample_summary:
+    input:
+        sites=f"{insertion_sites_folder}/all_sites.bed",
+        peaks=f"{peaks_folder}/all_peaks.bed",
+        evidence=_summary_evidence,
+        coverage=expand(
+            f"{coverage_folder}/{{sample}}_{{side}}_coverage.bedgraph",
+            sample=sample_list,
+            side=["forward", "reverse"],
+        ),
+        script=f"{scripts_dir}/sample_summary.py",
+    output:
+        f"{insertion_sites_folder}/sample_summary.tsv",
+    log:
+        "logs/sample_summary/log.log",
+    benchmark:
+        "benchmarks/sample_summary/benchmark.tsv"
+    conda:
+        "../envs/all.yaml"
+    threads: 1
+    params:
+        construct_contigs=" ".join(config["construct_contigs"]),
+        max_dist_between_sides=config["max_dist_between_sides"],
+        evidence_arg=lambda wildcards, input: (
+            f"--evidence {' '.join(input.evidence)}" if input.evidence else ""
+        ),
+    shell:
+        """
+        python3 {input.script} --sites {input.sites} --peaks {input.peaks} \
+            {params.evidence_arg} --coverage {input.coverage} \
+            --construct-contigs {params.construct_contigs} \
+            --max-dist {params.max_dist_between_sides} \
+            -o {output} >{log[0]} 2>&1
+        """

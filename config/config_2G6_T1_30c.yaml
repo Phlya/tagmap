@@ -1,0 +1,61 @@
+# Companion dataset to config_2G6_T1_30c_long_reads.yaml: the regular
+# (non-long-read) MiSeq run of the same 2G6 clone at 30C, from an earlier
+# sequencing run (SB_tagmentation_mapping/tagmap/config/config_2G6_T1_30c.yaml
+# in the older, per-experiment repo). Reuses the same genome/cassette/primers
+# and the same Sanger plates for cross-validation, so the pipeline's NGS call
+# can be checked against the clone's actual, Sanger-confirmed integration
+# site - a cleaner ground truth than CRE6's pooled hopping-distribution
+# comparison, since a clonal line has exactly one true site.
+#
+# Kept on peak_caller: 'coverage' to preserve the original behaviour for
+# comparison - see config_2G6_T1_30c_tiered.yaml for the same data called
+# properly.
+samples_path: './config/samples_2G6_T1_30c.tsv'
+sanger_samples_path: './config/sanger_samples_2G6_feb2025.tsv'
+
+refgen_path: '../SB_tagmentation_mapping/refgen_2G6/mm10_SB_CTCF.fa'
+chrom_sizes_path: '../SB_tagmentation_mapping/refgen_2G6/mm10_SB_CTCF_chromsizes.txt'
+chrom_sizes_path_no_cassette: '../../genomes/mm10/chromsizes.txt'
+
+do_fastqc: False
+trim: False
+
+mapper: 'bwa-mem2'
+
+dedup: True
+
+cassette_name: 'SB_cargo_CTCF'
+# Contigs of the reference that are construct rather than genome, so never
+# real integration sites. Without these the founder locus - which lives
+# inside the LacO cassette, not in mm10 - is reported as an insertion site.
+construct_contigs: ['mobilized_SB_LacO_cassette', 'TetO_3xCTCF_cassette']
+
+reverse_primer_sequence: 'aacgagttttaatgactccaactt'
+forward_primer_sequence: 'TCCTAACTGACCTAAGACAGG'
+primer_overhang: 'GTCTCGTGGGCTCGGAGATGTGTATAAGAGACAG'
+
+insertion_seq: "TA"
+
+peak_caller: 'coverage'
+
+# Peak calling: same tightened distances validated against CRE6
+# (see config_CRE6_loose2.yaml) rather than the sparse-screen schema defaults
+min_peak_width: 1
+min_peak_reads: 1
+min_peak_frac: 0.0
+min_peak_dist: 500
+min_peak_positions: 1
+max_dist_between_sides: 2
+
+sanger_basecaller: 'abi-trim'
+sanger_min_mapq: 30
+sanger_name_regex: '(?P<well>[A-H]\d{2})_\d+_(?P<direction>SB_fwd_seq|852)'
+sanger_direction_map:
+  SB_fwd_seq: forward
+  "852": reverse
+sanger_max_dist: 100
+
+validate_sanger_with_ngs: True
+validation_max_dist: 500
+
+results_folder: 'results/2G6_T1_30c'

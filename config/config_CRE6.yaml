@@ -1,0 +1,47 @@
+# CRE6 tagmentation-mapping pool, from the Eder et al. 2025 Science paper
+# ("Functional maps of a genomic locus reveal confinement of an enhancer by
+# its target gene"). Raw data is Mathias Eder's E2226 CRE6 non-sorted pool
+# library (10 sub-pools x forward/reverse ITR primer), shared for pipeline
+# testing and previously mapped with the older, per-experiment tagmap repo
+# at SB_tagmentation_mapping/tagmap (config_Mathias.yaml). This config mirrors
+# that one so the two pipelines' output can be compared directly.
+samples_path: './config/samples_CRE6.tsv'
+
+refgen_path: '../SB_tagmentation_mapping/refgen_mathias/mm10_mathias.fa'
+chrom_sizes_path: '../SB_tagmentation_mapping/refgen_mathias/mm10_mathias_chromsizes.txt'
+chrom_sizes_path_no_cassette: '../../genomes/mm10/chromsizes.txt'
+
+do_fastqc: False
+trim: False
+
+mapper: 'bwa-mem2'
+
+dedup: False
+
+cassette_name: 'cassette'
+# Contigs of the reference that are construct rather than genome, so never
+# real integration sites. Without these the founder locus - which lives
+# inside the LacO cassette, not in mm10 - is reported as an insertion site.
+construct_contigs: ['flanks']
+
+# Sequence of the primers used to amplify the cassette
+reverse_primer_sequence: 'aacgagttttaatgactccaactt'
+forward_primer_sequence: 'ggtgatcctaactgacctaagac'
+# 5' overhang of the primers above, likely Nextera N7 sequence
+primer_overhang: 'GTCTCGTGGGCTCGGAGATGTGTATAAGAGACAG'
+
+# Sequence used by the transposon for integration; e.g. TA for SB, TTAA for PB
+insertion_seq: "TA"
+
+peak_caller: 'coverage'
+
+# Peak calling (NGS only) - same thresholds as the older ad hoc config
+# (SB_tagmentation_mapping/tagmap/config/config_Mathias.yaml) for comparability
+min_peak_width: 1
+min_peak_reads: 100
+min_peak_frac: 0.001
+min_peak_dist: 1000
+min_peak_positions: 1
+max_dist_between_sides: 1000
+
+results_folder: 'results/CRE6'

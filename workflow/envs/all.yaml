@@ -17,3 +17,5 @@ dependencies:
   - coreutils
   # Only needed when sanger_basecaller is 'tracy'; harmless otherwise.
   - tracy >=0.7
+  - chromsize >=0.0.34
+  - minibwa

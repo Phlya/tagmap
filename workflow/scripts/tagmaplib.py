@@ -8,6 +8,7 @@ script's own directory on ``sys.path``, so no installation is needed.
 import numpy as np
 import pandas as pd
 import pysam
+from pairtools.lib import fileio, headerops
 
 # Columns of the per-sample peak files written by combine_peaks.py and
 # concatenated into all_peaks.bed.
@@ -20,6 +21,7 @@ PEAK_COLUMNS = [
     "side",
     "fraction",
     "n_positions",
+    "orientation",
 ]
 
 # Columns of the final insertion site files, shared by the NGS and Sanger
@@ -27,7 +29,62 @@ PEAK_COLUMNS = [
 SITE_COLUMNS = ["chrom", "start", "end", "sample_name", "score", "strand"]
 
 # Columns of the bedgraph files written by coverage.py.
-COVERAGE_COLUMNS = ["chrom", "start", "end", "count", "fraction"]
+COVERAGE_COLUMNS = ["chrom", "start", "end", "count", "fraction", "orientation"]
+
+
+# Walk types of pairtools parse2 in which the cassette/genome junction was
+# actually sequenced, because both sides of the pair come from within one read
+# (or from reads that overlap). "R1-2" is the other case: the two sides come
+# from the two different reads, so whatever lies between them was never read.
+JUNCTION_WALK_TYPES = ("R1", "R2", "R1&2")
+
+
+def cassette_orientation(side, runs_rightwards):
+    """Orientation of an integration, from which way its reads leave it.
+
+    Reads run outwards from the cassette, so which end of it a read came from
+    plus which way along the genome it then ran fixes how the cassette sits -
+    no need to compare the positions of the two sides, which say nothing once
+    both are pinned to the same base. The flip is the pipeline's convention,
+    set by sanger_sites.py flipping its forward reads, so that both branches
+    call the same insertion the same way.
+    """
+    rightwards = np.asarray(runs_rightwards, dtype=bool)
+    from_forward = np.asarray(side) == "forward"
+    return np.where(from_forward == rightwards, "-", "+")
+
+
+def normalise_junction_pos(pos, strand):
+    """Make both strands name the same base as the junction.
+
+    pairtools reports the 5' end of a plus-strand alignment one base further
+    right than that of a minus-strand one, so a single insertion read from
+    either direction comes out as two positions 1bp apart. Left in, that splits
+    every site in two, and makes the order of the two ITR sides - which is all
+    find_insertion_sites has to go on for the strand - a coin flip.
+    """
+    return np.asarray(pos) - (np.asarray(strand) == "+")
+
+
+def read_pairs(pairs, threads=1):
+    """Read a .pairs file into a frame, plus the chromsizes from its header."""
+    pairs_stream = (
+        fileio.auto_open(pairs, mode="r", nproc=threads)
+        if isinstance(pairs, str)
+        else pairs
+    )
+    header, pairs_body = headerops.get_header(pairs_stream)
+    cols = headerops.extract_column_names(header)
+    chromsizes = headerops.extract_chromsizes(header)
+    pairs_df = pd.read_csv(
+        pairs_body,
+        header=None,
+        names=cols,
+        chunksize=None,
+        sep="\t",
+        dtype={"chrom1": str, "chrom2": str},
+    )
+    return pairs_df, chromsizes
 
 
 def junction_position(start, end, strand):

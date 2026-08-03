@@ -36,7 +36,7 @@ primer_overhang: 'GTCTCGTGGGCTCGGAGATGTGTATAAGAGACAG'
 # Sequence used by the transposon for integration; e.g. TA for SB, TTAA for PB
 insertion_seq: "TA"
 
-use_only_read_junctions: False
+peak_caller: 'coverage'
 
 # Peak calling (NGS only)
 min_peak_width: 1
