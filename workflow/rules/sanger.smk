@@ -40,7 +40,7 @@ if config["mapper"] == "minibwa":
         benchmark:
             "benchmarks/sanger_map/{sample}.tsv"
         conda:
-            "../envs/minibwa.yaml"
+            "../envs/all.yaml"
         threads: 4
         params:
             extra=config["sanger_map_args"],

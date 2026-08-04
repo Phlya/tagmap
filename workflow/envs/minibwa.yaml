@@ -1,7 +1,0 @@
-name: tagmap-minibwa
-channels:
-  - bioconda
-  - conda-forge
-dependencies:
-  - minibwa=0.3
-  - samtools
