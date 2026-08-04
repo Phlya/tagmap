@@ -176,6 +176,7 @@ rule sanger_stats:
     output:
         qc=f"{stats_folder}/sanger_qc_stats.tsv",
         clones=f"{stats_folder}/sanger_clone_summary.tsv",
+        positions=f"{stats_folder}/sanger_positions.tsv",
     log:
         "logs/sanger_stats/log.log",
     conda:
@@ -196,5 +197,6 @@ rule sanger_stats:
             {params.original_site_arg} --original-max-dist {params.max_dist} \
             --output-qc {output.qc} \
             --output-clone-summary {output.clones} \
+            --output-positions {output.positions} \
             >{log[0]} 2>&1
         """

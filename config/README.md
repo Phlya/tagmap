@@ -55,5 +55,9 @@ Besides the site calls, the workflow writes small TSV summaries to
   side whose site lands there instead of a new locus is classified
   `unmobilized` rather than `confirmed`, and the clone gets an `unmobilized`
   column.
+- `sanger_positions.tsv` - distinct genomic positions found across the
+  clustered Sanger sites, per plate and in total (a locus seen on more than
+  one plate, e.g. an unmobilized founder control resequenced, still counts
+  once).
 - `validation_summary.tsv` - Sanger sites confirmed by the NGS data, per run
   and in total (only written when `validate_sanger_with_ngs` applies).

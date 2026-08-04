@@ -8,9 +8,12 @@ rule report:
         script=f"{scripts_dir}/report.py",
         ngs_qc=f"{stats_folder}/ngs_qc_stats.tsv" if sample_list else [],
         sanger_qc=f"{stats_folder}/sanger_qc_stats.tsv" if sanger_sample_list else [],
-        sanger_clones=(
-            f"{stats_folder}/sanger_clone_summary.tsv" if sanger_sample_list else []
-        ),
+        sanger_clones=f"{stats_folder}/sanger_clone_summary.tsv"
+        if sanger_sample_list
+        else [],
+        sanger_positions=f"{stats_folder}/sanger_positions.tsv"
+        if sanger_sample_list
+        else [],
         validation=f"{stats_folder}/validation_summary.tsv" if do_validation else [],
     output:
         f"{stats_folder}/report.md",
@@ -29,13 +32,19 @@ rule report:
         sanger_clones_arg=lambda wildcards, input: (
             f"--sanger-clones {input.sanger_clones}" if input.sanger_clones else ""
         ),
+        sanger_positions_arg=lambda wildcards, input: (
+            f"--sanger-positions {input.sanger_positions}"
+            if input.sanger_positions
+            else ""
+        ),
         validation_arg=lambda wildcards, input: (
             f"--validation {input.validation}" if input.validation else ""
         ),
     shell:
         """
         python3 {input.script} {params.ngs_qc_arg} {params.sanger_qc_arg} \
-            {params.sanger_clones_arg} {params.validation_arg} \
+            {params.sanger_clones_arg} {params.sanger_positions_arg} \
+            {params.validation_arg} \
             -o {output} \
             >{log[0]} 2>&1
         """
@@ -48,9 +57,12 @@ rule report_pdf:
         report_script=f"{scripts_dir}/report.py",
         ngs_qc=f"{stats_folder}/ngs_qc_stats.tsv" if sample_list else [],
         sanger_qc=f"{stats_folder}/sanger_qc_stats.tsv" if sanger_sample_list else [],
-        sanger_clones=(
-            f"{stats_folder}/sanger_clone_summary.tsv" if sanger_sample_list else []
-        ),
+        sanger_clones=f"{stats_folder}/sanger_clone_summary.tsv"
+        if sanger_sample_list
+        else [],
+        sanger_positions=f"{stats_folder}/sanger_positions.tsv"
+        if sanger_sample_list
+        else [],
         validation=f"{stats_folder}/validation_summary.tsv" if do_validation else [],
     output:
         f"{stats_folder}/report.pdf",
@@ -69,13 +81,19 @@ rule report_pdf:
         sanger_clones_arg=lambda wildcards, input: (
             f"--sanger-clones {input.sanger_clones}" if input.sanger_clones else ""
         ),
+        sanger_positions_arg=lambda wildcards, input: (
+            f"--sanger-positions {input.sanger_positions}"
+            if input.sanger_positions
+            else ""
+        ),
         validation_arg=lambda wildcards, input: (
             f"--validation {input.validation}" if input.validation else ""
         ),
     shell:
         """
         python3 {input.script} {params.ngs_qc_arg} {params.sanger_qc_arg} \
-            {params.sanger_clones_arg} {params.validation_arg} \
+            {params.sanger_clones_arg} {params.sanger_positions_arg} \
+            {params.validation_arg} \
             -o {output} \
             >{log[0]} 2>&1
         """
