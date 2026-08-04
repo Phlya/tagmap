@@ -11,7 +11,7 @@ if config["mapper"] == "minibwa":
             ),
         priority: 100
         conda:
-            "../envs/minibwa.yaml"
+            "../envs/all.yaml"
         threads: 8
         shell:
             """

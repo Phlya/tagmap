@@ -69,7 +69,7 @@ rule report_pdf:
     log:
         "logs/report_pdf/log.log",
     conda:
-        "../envs/report.yaml"
+        "../envs/all.yaml"
     threads: 1
     params:
         ngs_qc_arg=lambda wildcards, input: (

@@ -80,11 +80,11 @@ if config["mapper"] == "minibwa":
         output:
             f"{bams_folder}/{{sample}}.bam",
         log:
-            "logs/bwa_memx/{sample}.log",
+            "logs/minibwa/{sample}.log",
         benchmark:
-            "benchmarks/bwa_memx/{sample}.tsv"
+            "benchmarks/minibwa/{sample}.tsv"
         conda:
-            "../envs/minibwa.yaml"
+            "../envs/all.yaml"
         threads: 12
         params:
             # --hic: independent mate mapping, no proper-pair assumption
