@@ -29,10 +29,13 @@ rule find_insertion_sites:
         peaks=f"{peaks_folder}/all_peaks.bed",
         genome=refgen_path,
         genome_index=config["fasta_index_file"],
+        chromsizes=config.get("chrom_sizes_path_no_cassette", []),
         script=f"{scripts_dir}/find_insertion_sites.py",
     output:
         output=f"{insertion_sites_folder}/all_sites.bed",
         for_ucsc=f"{insertion_sites_folder}/all_sites_for_ucsc.bed",
+        confirmed=f"{insertion_sites_folder}/confirmed_ngs_sites.bed",
+        confirmed_no_cassette=f"{insertion_sites_folder}/confirmed_ngs_sites_no_cassette.bed",
     log:
         "logs/find_insertion_sites/all.log",
     benchmark:
@@ -43,13 +46,23 @@ rule find_insertion_sites:
     params:
         insertion_seq=config["insertion_seq"],
         max_dist_between_sides=config["max_dist_between_sides"],
+        snap_window=config["snap_window"],
+        min_orientation_support=config["min_orientation_support"],
+        chromsizes_arg=lambda wildcards, input: (
+            f"--chromsizes {input.chromsizes}" if input.chromsizes else ""
+        ),
     shell:
         """
         python3 {input.script} --peaks {input.peaks} \
             --max-dist {params.max_dist_between_sides} \
             --genome {input.genome} --genome-index {input.genome_index} \
             --insertion-seq {params.insertion_seq} \
+            --snap-window {params.snap_window} \
+            --min-orientation-support {params.min_orientation_support} \
+            {params.chromsizes_arg} \
             -o {output.output} --output-for-ucsc {output.for_ucsc} \
+            --output-confirmed {output.confirmed} \
+            --output-confirmed-no-cassette {output.confirmed_no_cassette} \
             >{log[0]} 2>&1
         """
 
@@ -106,6 +119,11 @@ rule sample_summary:
 rule ngs_stats:
     input:
         stats=expand(f"{pairs_folder}/{{sample}}_stats.yml", sample=sample_list),
+        pairs=expand(
+            f"{pairs_folder}/{{sample}}_{{side}}.pairs",
+            sample=sample_list,
+            side=["forward", "reverse"],
+        ),
         sites=f"{insertion_sites_folder}/all_sites.bed",
         script=f"{scripts_dir}/ngs_stats.py",
     output:
@@ -117,7 +135,8 @@ rule ngs_stats:
     threads: 1
     shell:
         """
-        python3 {input.script} --stats-yml {input.stats} --sites {input.sites} \
+        python3 {input.script} --stats-yml {input.stats} --pairs {input.pairs} \
+            --sites {input.sites} \
             -o {output} \
             >{log[0]} 2>&1
         """

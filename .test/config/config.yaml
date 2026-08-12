@@ -16,6 +16,11 @@ dedup: False
 cassette_name: 'test_cassette'
 forward_primer_sequence: 'GGTGATCCTAACTGACCTAAGAC'
 reverse_primer_sequence: 'AACGAGTTTTAATGACTCCAACTT'
+# Same sequences as above - exercises the separate Sanger primer-position
+# path (sanger_forward/reverse_primer_sequence) without changing any output,
+# since the test data uses the same primers for both branches.
+sanger_forward_primer_sequence: 'GGTGATCCTAACTGACCTAAGAC'
+sanger_reverse_primer_sequence: 'AACGAGTTTTAATGACTCCAACTT'
 
 insertion_seq: 'TA'
 
@@ -35,7 +40,9 @@ sanger_name_regex: '(?P<well>[A-H]\d{2})_(?P<run>\d+)_(?P<direction>[FR])'
 sanger_max_dist: 100
 # Clone A01's planted insertion (chr1:8000, see make_test_data.py) doubles as
 # the "original" locus here, so A01 exercises the unmobilized classification.
-original_insertion_site: 'chr1:8000'
+# 8001, not 8000: sites are now reported at the T/A boundary
+# (tagmaplib.insertion_site_from_motif), one base into the planted "TA".
+original_insertion_site: 'chr1:8001'
 original_insertion_max_dist: 25
 
 validate_sanger_with_ngs: True
@@ -44,6 +51,7 @@ validation_max_dist: 500
 fastq_folder: 'results/fastq'
 bams_folder: 'results/bams'
 primer_position_file: 'results/primer_positions.json'
+sanger_primer_position_file: 'results/sanger_primer_positions.json'
 pairs_folder: 'results/pairs'
 coverage_folder: 'results/coverage'
 peaks_folder: 'results/peaks'

@@ -2,9 +2,11 @@
 
 The NGS branch selects read pairs whose cassette side ends exactly at a primer,
 so these positions decide what counts as a real tagmentation product; the
-Sanger branch uses them to check that a read starts where it should. Getting
-them silently wrong would quietly empty the output, so a primer that cannot be
-found is an error rather than a -1.
+Sanger branch uses them to check that a read starts where it should. Run once
+per branch (see get_primer_positions/get_sanger_primer_positions in
+reference.smk), since the two don't always share the same physical primer.
+Getting them silently wrong would quietly empty the output, so a primer that
+cannot be found is an error rather than a -1.
 """
 
 import argparse

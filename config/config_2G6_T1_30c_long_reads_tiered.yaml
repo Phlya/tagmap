@@ -8,8 +8,8 @@
 # base, an ITR-anchored pair's is a tagmentation site a median ~130bp away.
 # junction_tiered uses each for what it is - junctions place sites and are
 # believed alone, anchored pairs only corroborate.
-samples_path: './config/samples_2G6_T1_30c_long_reads.tsv'
-sanger_samples_path: './config/sanger_samples_2G6_feb2025.tsv'
+samples_path: 'config/samples_2G6_T1_30c_long_reads.tsv'
+sanger_samples_path: 'config/sanger_samples_2G6_feb2025.tsv'
 
 refgen_path: '../SB_tagmentation_mapping/refgen_2G6/mm10_SB_CTCF.fa'
 chrom_sizes_path: '../SB_tagmentation_mapping/refgen_2G6/mm10_SB_CTCF_chromsizes.txt'
@@ -46,7 +46,7 @@ min_peak_dist: 500
 min_peak_positions: 1
 max_dist_between_sides: 2
 
-sanger_basecaller: 'abi-trim'
+sanger_basecaller: 'tracy'
 sanger_min_mapq: 30
 sanger_name_regex: '(?P<well>[A-H]\d{2})_\d+_(?P<direction>SB_fwd_seq|852)'
 sanger_direction_map:

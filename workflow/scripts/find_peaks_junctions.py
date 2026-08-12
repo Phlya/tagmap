@@ -203,10 +203,17 @@ if junctions.shape[0]:
     sites["end"] = sites["pos51"] + 1
     # Collapse the couple of bases of mapping wobble around one real junction,
     # and nothing more - genuine neighbouring insertions can be tens of bases
-    # apart in a local re-mobilisation assay.
+    # apart in a local re-mobilisation assay, but can also sit right next to
+    # each other in one that packs many independent re-integrations into a
+    # small locus (see max_dist_between_sides). min_dist=None rather than 0
+    # for jitter=0: bioframe's semi-open intervals put a 0bp gap between two
+    # 1bp intervals that already touch (e.g. the +/- strand pos51 offset
+    # normalise_junction_pos corrects for can put two real, 2bp-apart
+    # junctions one base apart), and min_dist=0 clusters those anyway - only
+    # None truly means "never absorb", clustering overlaps alone.
     sites = bioframe.cluster(
         sites,
-        min_dist=args.junction_jitter,
+        min_dist=args.junction_jitter or None,
         return_cluster_ids=True,
         return_cluster_intervals=False,
     )

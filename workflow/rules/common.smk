@@ -1,4 +1,3 @@
-import functools
 import glob
 import json
 import os
@@ -40,15 +39,31 @@ for _key, _subpath in {
     "validation_folder": "validation",
     "stats_folder": "stats",
     "primer_position_file": "primer_positions.json",
+    "sanger_primer_position_file": "sanger_primer_positions.json",
     "original_site_file": "original_site.json",
     "fasta_index_file": "refgen.fai",
 }.items():
     config.setdefault(_key, os.path.join(config["results_folder"], _subpath))
 
+# The Sanger branch defaults to the same primers as the NGS branch, but can be
+# pointed at a different pair - see sanger_forward_primer_sequence in the
+# schema for why the two sometimes differ. Neither forward_primer_sequence
+# nor reverse_primer_sequence is required at this point - a Sanger-only
+# project may skip them entirely and give sanger_forward_primer_sequence/
+# sanger_reverse_primer_sequence instead (checked once sample_list/
+# sanger_sample_list are known, further down).
+config.setdefault("sanger_forward_primer_sequence", config.get("forward_primer_sequence"))
+config.setdefault("sanger_reverse_primer_sequence", config.get("reverse_primer_sequence"))
+
 
 # Anchored to the workflow rather than the working directory, so that the
 # pipeline can be run from anywhere - including from .test, as CI does.
 scripts_dir = os.path.join(workflow.basedir, "scripts")
+
+import sys
+
+sys.path.insert(0, scripts_dir)
+import tagmaplib
 
 refgen_path = normpath(config["refgen_path"])
 
@@ -78,7 +93,6 @@ has_original_site = bool(
 )
 
 
-@functools.cache
 def cassette_length():
     """Length of the cassette contig, in chrom_sizes_path.
 
@@ -88,7 +102,10 @@ def cassette_length():
     whichever rule first calls this, rather than something the user has to
     generate by hand before the DAG can even be built. Sanger-only runs never
     call this at all, so for them chrom_sizes_path need not exist on disk,
-    only be set.
+    only be set. Deliberately not cached: chrom_sizes_path is itself often a
+    make_chromsizes output, so a value read from it during this same run's
+    DAG-building pass (before that rule has actually executed) can be stale -
+    every caller needs its own fresh read, not one frozen for the whole run.
     """
     chromsizes = pd.read_table(
         config["chrom_sizes_path"],
@@ -163,6 +180,26 @@ if sample_list and not config.get("chrom_sizes_path_no_cassette"):
         "chrom_sizes_path_no_cassette is needed to write genome browser tracks "
         "for NGS samples. It should be the chrom sizes of the genome alone, "
         "without the cassette contig."
+    )
+
+if sample_list and not (
+    config.get("forward_primer_sequence") and config.get("reverse_primer_sequence")
+):
+    raise ValueError(
+        "forward_primer_sequence and reverse_primer_sequence are required "
+        "when samples_path is set - the NGS branch uses them to tell real "
+        "tagmentation pairs from the rest."
+    )
+
+if sanger_sample_list and not (
+    config.get("sanger_forward_primer_sequence")
+    and config.get("sanger_reverse_primer_sequence")
+):
+    raise ValueError(
+        "forward_primer_sequence and reverse_primer_sequence (or, if the "
+        "Sanger primer differs from the NGS one, sanger_forward_primer_sequence "
+        "and sanger_reverse_primer_sequence) are required when "
+        "sanger_samples_path is set."
     )
 
 if sanger_samples.shape[0]:
@@ -286,6 +323,8 @@ def workflow_targets():
         targets += [
             f"{peaks_folder}/all_peaks.bed",
             f"{insertion_sites_folder}/all_sites.bed",
+            f"{insertion_sites_folder}/confirmed_ngs_sites.bed",
+            f"{insertion_sites_folder}/confirmed_ngs_sites_no_cassette.bed",
             f"{insertion_sites_folder}/sample_summary.tsv",
             f"{stats_folder}/ngs_qc_stats.tsv",
         ]
@@ -295,9 +334,15 @@ def workflow_targets():
         )
         targets += [
             f"{sanger_folder}/all_sanger_sites.bed",
+            f"{sanger_folder}/confirmed_sanger_sites.bed",
+            f"{sanger_folder}/confirmed_sanger_sites_no_cassette.bed",
+            f"{sanger_folder}/confirmed_sanger_sites_region.bed",
+            f"{sanger_folder}/confirmed_sanger_sites_deduplicated.bed",
+            f"{sanger_folder}/confirmed_sanger_sites_region_deduplicated.bed",
             f"{stats_folder}/sanger_qc_stats.tsv",
             f"{stats_folder}/sanger_clone_summary.tsv",
             f"{stats_folder}/sanger_positions.tsv",
+            f"{stats_folder}/sanger_position_counts.tsv",
         ]
     if do_validation:
         targets += [
@@ -310,7 +355,13 @@ def workflow_targets():
 
 
 def sanger_ngs_pairs():
-    """sanger_sample=ngs_sample assignments taken from the Sanger sheet."""
+    """sanger_sample=ngs_sample assignments taken from the Sanger sheet.
+
+    The left-hand side has to match the "sample_name" values compare_sanger_ngs.py
+    actually sees in all_sanger_sites.bed - sanger_sites.py renames those from
+    the raw sheet name via tagmaplib.rename_clone_id, so the same rename is
+    applied here rather than passing the pre-rename sheet name through.
+    """
     pairs = []
     for sample in sanger_sample_list:
         ngs_sample = sanger_row_value(sample, "ngs_sample")
@@ -320,5 +371,6 @@ def sanger_ngs_pairs():
                     f"Sanger sample {sample!r} names NGS sample {ngs_sample!r}, "
                     f"which is not in {config['samples_path']}."
                 )
-            pairs.append(f"{sample}={ngs_sample}")
+            renamed_sample, _ = tagmaplib.rename_clone_id(sample, "")
+            pairs.append(f"{renamed_sample}={ngs_sample}")
     return pairs

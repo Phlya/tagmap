@@ -49,10 +49,26 @@ properties:
     type: string
     description: >
       The part of the forward primer that binds the ITR. If several PCRs were
-      used, the primer of the last one.
+      used, the primer of the last one. Used for the NGS branch, and as the
+      Sanger branch's default unless sanger_forward_primer_sequence is set.
+      Required when samples_path is set; a Sanger-only project may instead
+      give just sanger_forward_primer_sequence/sanger_reverse_primer_sequence.
   reverse_primer_sequence:
     type: string
     description: As forward_primer_sequence, for the other end of the cassette.
+  sanger_forward_primer_sequence:
+    type: string
+    description: >
+      Overrides forward_primer_sequence for the Sanger branch only, for
+      projects where the actual Sanger sequencing primer differs from the
+      primer used to build the NGS library (e.g. a different primer against
+      the same ITR), or where a Sanger-only project has no NGS primer to
+      default to at all. Defaults to forward_primer_sequence; required (along
+      with sanger_reverse_primer_sequence) when sanger_samples_path is set and
+      forward_primer_sequence/reverse_primer_sequence are not given.
+  sanger_reverse_primer_sequence:
+    type: string
+    description: As sanger_forward_primer_sequence, for the reverse primer.
   insertion_seq:
     type: string
     default: "TA"
@@ -115,8 +131,11 @@ properties:
     default: 2
     description: >
       junction_tiered only. Junction positions this close apart are one site,
-      absorbing mapping wobble. Keep it small: real neighbouring insertions in
-      a local re-mobilisation assay can be tens of bases apart.
+      absorbing mapping wobble. Keep it small: in a local re-mobilisation
+      assay, distinct real insertions can sit only 1-2bp apart and still show
+      cleanly opposite orientations read-for-read - set to 0 to trust every
+      distinct junction base as its own site (still subject to
+      max_dist_between_sides for combining a site's forward/reverse peaks).
   max_fragment:
     type: integer
     default: 1000
@@ -176,13 +195,42 @@ properties:
   min_peak_positions:
     type: integer
     default: 1
+  snap_window:
+    type: integer
+    default: 5
+    description: >
+      Before forward/reverse peaks are combined, each one is snapped to the
+      nearest insertion_seq motif within this many bases, so both sides of
+      one real integration land on the exact same base regardless of a few
+      bp of slop (the +/- strand pos5 reporting offset, indel wobble,
+      Sleeping Beauty's own target-site duplication) - checked against real
+      data, a peak's own raw position can be off by up to ~4bp even when
+      correct. This is what lets max_dist_between_sides below be set tight:
+      with snapping on, two peaks from one real integration should already
+      share a position, so a small max_dist is only covering the cases
+      snapping itself could not resolve (no motif within window). 0 disables
+      snapping.
   max_dist_between_sides:
     type: integer
     default: 100
     description: >
       Peaks from the forward and reverse side of the cassette within this
-      distance are combined into one insertion site. Same genome-wide-vs-
-      dense-locus tradeoff as min_peak_dist above - turn down together.
+      distance are combined into one insertion site. With snap_window
+      enabled (the default), this only needs to be small - e.g. 2 - since
+      real pairs should already coincide; it still governs the genome-wide-
+      vs-dense-locus tradeoff (see min_peak_dist) for whatever snapping
+      could not resolve.
+  min_orientation_support:
+    type: integer
+    default: 20
+    description: >
+      A peak needs at least this many distinct molecules before it gets a
+      say in which way its site faces. Checked against Sanger-confirmed
+      sites: peaks under ~20 molecules were barely better than a coin flip
+      on strand, while every peak above ~100 molecules was correct. Raise
+      it to demand more evidence before committing to a strand (more sites
+      fall back to "."); 0 disables the check and trusts every peak's own
+      orientation, however thin.
 
   # ------------------------------------------------------- Sanger analysis --
   sanger_basecaller:
@@ -259,6 +307,16 @@ properties:
     description: >
       Distance within which a Sanger site counts as being at the original
       insertion (see original_insertion_site/original_insertion_upstream_seq).
+  validated_clones_region:
+    type: string
+    description: >
+      chrom:start-end (0-based, half-open) - restricts
+      confirmed_sanger_sites_region.bed to fully validated clones landing in
+      this region, e.g. to pull out clones near a known hotspot. Leave unset
+      to include fully validated clones anywhere there. Also drawn onto
+      report.pdf's Sanger clones table: a validated clone landing in this
+      region gets a bold border around its row, on top of its usual
+      green/yellow/red fill.
 
   # ------------------------------------------------------------ validation --
   validate_sanger_with_ngs:
@@ -314,6 +372,12 @@ properties:
   primer_position_file:
     type: string
     description: Defaults to "{results_folder}/primer_positions.json".
+  sanger_primer_position_file:
+    type: string
+    description: >
+      Like primer_position_file, but built from
+      sanger_forward_primer_sequence/sanger_reverse_primer_sequence for the
+      Sanger branch. Defaults to "{results_folder}/sanger_primer_positions.json".
   original_site_file:
     type: string
     description: >
@@ -332,5 +396,3 @@ required:
   - refgen_path
   - chrom_sizes_path
   - cassette_name
-  - forward_primer_sequence
-  - reverse_primer_sequence

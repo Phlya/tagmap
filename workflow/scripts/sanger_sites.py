@@ -62,6 +62,14 @@ argparser.add_argument(
     help="Tolerance when checking that a read starts at the ITR primer",
 )
 argparser.add_argument(
+    "--contig-edge-tolerance",
+    type=int,
+    default=50,
+    help="How close a read's alignment has to come to the physical end of "
+    "its contig, in the direction it is travelling, to count as having run "
+    "off the end of a short contig rather than hit a real second site",
+)
+argparser.add_argument(
     "--direction",
     choices=["forward", "reverse"],
     default="forward",
@@ -181,7 +189,30 @@ def uncovered_before(segments, position):
     return int((~covered).sum())
 
 
-def analyse_read(segments, primer_positions, args, default_direction):
+def runs_off_contig_end(genomic, site, chrom_lengths, tolerance):
+    """Whether `site`'s own contig runs out before the read does.
+
+    A short contig (a landing pad, another donor site, ...) that a read
+    crosses all the way through leaves nothing left to align the rest of the
+    read to, so whatever comes next lands on a different contig entirely -
+    not because it is a real, competing second site, but because the first
+    one's reference sequence simply ended. Checked by seeing whether the
+    alignment(s) on site's own contig, taken together, reach within
+    `tolerance` bases of that contig's physical end in the direction the
+    read is travelling (increasing coordinate for a '+' alignment, decreasing
+    for '-'). A real chromosome is long enough that this is never close by
+    accident, so no allowlist of "which contigs are short" is needed.
+    """
+    contig_len = chrom_lengths.get(site["chrom"])
+    if contig_len is None:
+        return False
+    same_contig = [s for s in genomic if s["chrom"] == site["chrom"]]
+    if site["strand"] == "+":
+        return contig_len - max(s["end"] for s in same_contig) <= tolerance
+    return min(s["start"] for s in same_contig) <= tolerance
+
+
+def analyse_read(segments, primer_positions, args, default_direction, chrom_lengths):
     """Turn one read's alignments into a site plus the QC behind it."""
     segments = sorted(segments, key=lambda s: (not s["mapped"], s["read_start"]))
     mapped = [s for s in segments if s["mapped"]]
@@ -244,7 +275,9 @@ def analyse_read(segments, primer_positions, args, default_direction):
     unexplained = uncovered_before(mapped, site["read_start"])
 
     reasons = []
-    if len(genomic) > 1:
+    if len(genomic) > 1 and not runs_off_contig_end(
+        genomic, site, chrom_lengths, args.contig_edge_tolerance
+    ):
         reasons.append("multiple genomic alignments")
     if unexplained > args.max_unexplained:
         reasons.append(f"{unexplained} unexplained bases before the junction")
@@ -272,6 +305,9 @@ if __name__ == "__main__":
         primer_positions = json.load(f)
     direction_map = dict(item.split("=", 1) for item in args.direction_map)
     name_regex = re.compile(args.name_regex) if args.name_regex else None
+
+    with pysam.FastaFile(args.genome, filepath_index=args.genome_index) as fasta:
+        chrom_lengths = dict(zip(fasta.references, fasta.lengths))
 
     alignments = alignment_table(args.bam, set(args.construct_contigs))
 
@@ -323,11 +359,15 @@ if __name__ == "__main__":
         record.update(fields)
         record.update(
             analyse_read(
-                group.to_dict("records"), primer_positions, args, direction
+                group.to_dict("records"), primer_positions, args, direction,
+                chrom_lengths,
             )
         )
         record["clone"] = (
             fields.get("clone") or args.clone or fields.get("well") or readname
+        )
+        record["sample_name"], record["clone"] = tagmaplib.rename_clone_id(
+            record["sample_name"], record["clone"]
         )
         reads.append(record)
 
@@ -344,21 +384,18 @@ if __name__ == "__main__":
         index_file=args.genome_index,
     )
     found = motif_start >= 0
+    site = tagmaplib.insertion_site_from_motif(motif_start, args.insertion_seq)
     reads[f"{args.insertion_seq}_found"] = found
-    reads.loc[found, "start"] = motif_start[found]
-    reads.loc[found, "end"] = motif_start[found] + len(args.insertion_seq)
+    reads.loc[found, "start"] = site[found]
+    reads.loc[found, "end"] = site[found] + 1
 
-    # Reads from the two primers run opposite ways along the read, so one of
-    # them has to be flipped for a site to have one orientation rather than two.
-    # Which one is fixed by the NGS branch: determine_direction in
-    # find_insertion_sites.py calls orientation from the order of the forward
-    # and reverse peaks, and flipping the forward reads here is what makes the
-    # two branches agree about the same insertion.
-    reads["strand"] = np.where(
-        reads["direction"] == "forward",
-        tagmaplib.flip_strand(reads["strand"]),
-        reads["strand"],
-    )
+    # strand here is the read's actual, raw mapped strand - the two ITR
+    # primers run outwards in opposite directions, so forward and reverse
+    # reads of the same real insertion land on opposite raw strands. That
+    # correction (forward is the reference; reverse gets flipped) is applied
+    # later, in combine_sanger_sites.py, once reads from both primers are
+    # actually being compared - reads.tsv stays a record of what each read
+    # itself mapped to.
 
     for column in columns:
         if column not in reads.columns:
