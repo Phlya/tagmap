@@ -4,7 +4,9 @@ The two assays fail in different ways. A Sanger read gives one clean junction
 but only from whichever ITR primer happened to work, while an NGS library
 covers both sides but has to be pulled out of a pile of reads. So a Sanger site
 that was only read from one end can still be trusted if an NGS site sits at the
-same place, especially a two-sided one - which is what this reports.
+same place, especially a two-sided one - which is what this reports. The
+matching NGS site's own coordinate is carried along too (ngs_site_chrom/
+start/end), for pinpointing a confirmed Sanger site onto it later.
 """
 
 import argparse
@@ -48,6 +50,14 @@ def nearest(sanger, ngs, prefix, extra_columns, max_dist):
     # nearest neighbour, so carry the row each hit belongs to through the call.
     query = sanger[["chrom", "start", "end"]].copy()
     query["sanger_row"] = np.arange(sanger.shape[0])
+    # A query on a chrom missing from `ngs` entirely (e.g. a Sanger site on a
+    # short standalone contig NGS never reaches) makes bioframe fill that
+    # row's columns with NA - which crashes on a plain bool column (e.g.
+    # all_sites.bed's TA_found) rather than silently upcasting, so cast
+    # defensively first.
+    ngs = ngs.copy()
+    bool_columns = ngs.columns[ngs.dtypes == bool]
+    ngs[bool_columns] = ngs[bool_columns].astype(object)
     closest = (
         bioframe.closest(query, ngs, suffixes=("", "_ngs"), k=1)
         .set_index("sanger_row")
@@ -79,7 +89,13 @@ if __name__ == "__main__":
         ngs_sites = ngs_sites.rename(columns={"site_sides": "sides"})
     ngs_peaks = tagmaplib.read_peaks(args.ngs_peaks)
 
-    site_columns = ["strand", "score", "sides"]
+    # chrom/start/end travel through too (as ngs_site_chrom/start/end) so a
+    # confirmed Sanger site can be re-pinpointed onto the matching NGS site's
+    # own coordinate later (see filter_confirmed_sites.py) - NGS backs a site
+    # with many more reads than the one or few Sanger reads behind any single
+    # clone, and snaps it onto its motif (see find_insertion_sites.py's
+    # snap_window), so its coordinate is the more trustworthy of the two.
+    site_columns = ["chrom", "start", "end", "strand", "score", "sides"]
     peak_columns = ["side", "count"]
 
     if sanger.shape[0] == 0:
@@ -129,6 +145,26 @@ if __name__ == "__main__":
     # cassette, so a stranded NGS site is a two-sided one.
     sanger["ngs_two_sided"] = np.where(matched, strand_known, pd.NA)
     sanger["confirmed_by_ngs"] = matched & (sanger["ngs_strand_agrees"] != False)
+
+    def row_ngs_verification(row):
+        sanger_sides = []
+        if row.n_forward > 0:
+            sanger_sides.append("forward")
+        if row.n_reverse > 0:
+            sanger_sides.append("reverse")
+        ngs_sides = (
+            tagmaplib.NGS_SIDE_SETS.get(row.ngs_site_sides, [])
+            if row.confirmed_by_ngs
+            else []
+        )
+        return tagmaplib.ngs_verification_label(sanger_sides, ngs_sides)
+
+    # Sanger's own forward/reverse primers already say which side(s) it
+    # confirms at this site; NGS is only consulted to fill in a side Sanger
+    # left unconfirmed (see tagmaplib.ngs_verification_label).
+    sanger["ngs_verification"] = [
+        row_ngs_verification(row) for row in sanger.itertuples()
+    ]
 
     sanger.to_csv(args.output, sep="\t", index=False)
 

@@ -21,6 +21,16 @@ argparser.add_argument("--max-dist", type=int, default=100)
 argparser.add_argument("--blacklist", default=None)
 argparser.add_argument("--output", "-o", required=True)
 argparser.add_argument("--output-for-ucsc", required=True)
+argparser.add_argument(
+    "--chromsizes",
+    default=None,
+    help="Chrom sizes of the genome alone (chrom_sizes_path_no_cassette). "
+    "Sites outside it - i.e. on the cassette/landing-pad contigs, which "
+    "genome browsers don't know about - are dropped from --output-for-ucsc. "
+    "Left unfiltered if not given.",
+)
+
+UCSC_COLUMNS = ["chrom", "start", "end", "name", "score", "strand"]
 
 READ_SITE_COLUMNS = [
     "chrom",
@@ -85,12 +95,25 @@ if __name__ == "__main__":
         print("No passing Sanger reads to combine")
         empty = pd.DataFrame({c: pd.Series(dtype=object) for c in OUTPUT_COLUMNS})
         empty.to_csv(args.output, sep="\t", index=False)
-        empty[tagmaplib.SITE_COLUMNS].to_csv(
-            args.output_for_ucsc, sep="\t", index=False, header=False
-        )
+        empty["name"] = empty["sample_name"]
+        tagmaplib.write_bed(empty, args.output_for_ucsc, columns=UCSC_COLUMNS)
         raise SystemExit(0)
 
     sites[["start", "end"]] = sites[["start", "end"]].astype(int)
+
+    # The two ITR primers read outwards in opposite directions, so a forward-
+    # primer read and a reverse-primer read of the same real insertion land
+    # on opposite raw genomic strands (see sanger_sites.py, which reports
+    # each read's actual mapped strand, uncorrected). Forward is the
+    # pipeline's reference; reverse is flipped here so both sides of one
+    # clone report the same final strand and strands_agree means something.
+    # Matches tagmaplib.cassette_orientation's own convention on the NGS
+    # side, so both branches call the same insertion the same way.
+    sites["strand"] = np.where(
+        sites["direction"] == "reverse",
+        tagmaplib.flip_strand(sites["strand"]),
+        sites["strand"],
+    )
 
     if args.blacklist is not None:
         before = sites.shape[0]
@@ -120,8 +143,19 @@ if __name__ == "__main__":
     )
     combined.to_csv(args.output, sep="\t", index=False)
 
-    combined[tagmaplib.SITE_COLUMNS].sort_values(["chrom", "start", "end"]).to_csv(
-        args.output_for_ucsc, sep="\t", index=False, header=False
+    # sample_name alone repeats across every clone on a plate; plate+clone
+    # actually identifies which well a browser hit came from.
+    combined["name"] = combined["sample_name"] + "_" + combined["clone"]
+    for_ucsc = combined[UCSC_COLUMNS].sort_values(["chrom", "start", "end"])
+    if args.chromsizes is not None:
+        chromsizes = bioframe.read_chromsizes(args.chromsizes)
+        for_ucsc = bioframe.trim(for_ucsc, chromsizes).dropna()
+        for_ucsc[["start", "end"]] = for_ucsc[["start", "end"]].astype(int)
+    track_name = (
+        "_".join(sorted(combined["sample_name"].unique())) if combined.shape[0] else None
+    )
+    tagmaplib.write_bed(
+        for_ucsc, args.output_for_ucsc, track_name=track_name, color_by_strand=True
     )
 
     print(

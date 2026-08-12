@@ -14,6 +14,13 @@ rule report:
         sanger_positions=f"{stats_folder}/sanger_positions.tsv"
         if sanger_sample_list
         else [],
+        sanger_position_counts=f"{stats_folder}/sanger_position_counts.tsv"
+        if sanger_sample_list
+        else [],
+        sanger_read_qc=f"{stats_folder}/sanger_read_qc.tsv" if sanger_sample_list else [],
+        deduplicated=f"{sanger_folder}/confirmed_sanger_sites_region_deduplicated.bed"
+        if sanger_sample_list
+        else [],
         validation=f"{stats_folder}/validation_summary.tsv" if do_validation else [],
     output:
         f"{stats_folder}/report.md",
@@ -37,6 +44,17 @@ rule report:
             if input.sanger_positions
             else ""
         ),
+        sanger_position_counts_arg=lambda wildcards, input: (
+            f"--sanger-position-counts {input.sanger_position_counts}"
+            if input.sanger_position_counts
+            else ""
+        ),
+        sanger_read_qc_arg=lambda wildcards, input: (
+            f"--sanger-read-qc {input.sanger_read_qc}" if input.sanger_read_qc else ""
+        ),
+        deduplicated_arg=lambda wildcards, input: (
+            f"--deduplicated {input.deduplicated}" if input.deduplicated else ""
+        ),
         validation_arg=lambda wildcards, input: (
             f"--validation {input.validation}" if input.validation else ""
         ),
@@ -44,7 +62,8 @@ rule report:
         """
         python3 {input.script} {params.ngs_qc_arg} {params.sanger_qc_arg} \
             {params.sanger_clones_arg} {params.sanger_positions_arg} \
-            {params.validation_arg} \
+            {params.sanger_position_counts_arg} {params.sanger_read_qc_arg} \
+            {params.deduplicated_arg} {params.validation_arg} \
             -o {output} \
             >{log[0]} 2>&1
         """
@@ -61,6 +80,13 @@ rule report_pdf:
         if sanger_sample_list
         else [],
         sanger_positions=f"{stats_folder}/sanger_positions.tsv"
+        if sanger_sample_list
+        else [],
+        sanger_position_counts=f"{stats_folder}/sanger_position_counts.tsv"
+        if sanger_sample_list
+        else [],
+        sanger_read_qc=f"{stats_folder}/sanger_read_qc.tsv" if sanger_sample_list else [],
+        deduplicated=f"{sanger_folder}/confirmed_sanger_sites_region_deduplicated.bed"
         if sanger_sample_list
         else [],
         validation=f"{stats_folder}/validation_summary.tsv" if do_validation else [],
@@ -86,6 +112,17 @@ rule report_pdf:
             if input.sanger_positions
             else ""
         ),
+        sanger_position_counts_arg=lambda wildcards, input: (
+            f"--sanger-position-counts {input.sanger_position_counts}"
+            if input.sanger_position_counts
+            else ""
+        ),
+        sanger_read_qc_arg=lambda wildcards, input: (
+            f"--sanger-read-qc {input.sanger_read_qc}" if input.sanger_read_qc else ""
+        ),
+        deduplicated_arg=lambda wildcards, input: (
+            f"--deduplicated {input.deduplicated}" if input.deduplicated else ""
+        ),
         validation_arg=lambda wildcards, input: (
             f"--validation {input.validation}" if input.validation else ""
         ),
@@ -93,7 +130,8 @@ rule report_pdf:
         """
         python3 {input.script} {params.ngs_qc_arg} {params.sanger_qc_arg} \
             {params.sanger_clones_arg} {params.sanger_positions_arg} \
-            {params.validation_arg} \
+            {params.sanger_position_counts_arg} {params.sanger_read_qc_arg} \
+            {params.deduplicated_arg} {params.validation_arg} \
             -o {output} \
             >{log[0]} 2>&1
         """

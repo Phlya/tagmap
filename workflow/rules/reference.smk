@@ -105,26 +105,66 @@ rule find_original_site:
         """
 
 
-rule get_primer_positions:
-    input:
-        script=f"{scripts_dir}/get_primer_positions.py",
-        refgen_path=refgen_path,
-    output:
-        config["primer_position_file"],
-    log:
-        "logs/get_primer_positions/log.log",
-    conda:
-        "../envs/all.yaml"
-    params:
-        cassette_name=config["cassette_name"],
-        forward_primer=config["forward_primer_sequence"],
-        reverse_primer=config["reverse_primer_sequence"],
-    shell:
-        """
-        python3 {input.script} --genome {input.refgen_path} \
-            --cassette-name {params.cassette_name} \
-            --forward-primer {params.forward_primer} \
-            --reverse-primer {params.reverse_primer} \
-            -o {output} \
-            >{log[0]} 2>&1
-        """
+# Guarded like ngs.smk/sanger.smk's own inclusion in the Snakefile (on
+# sample_list/sanger_sample_list): forward_primer_sequence/reverse_primer_sequence
+# and sanger_forward_primer_sequence/sanger_reverse_primer_sequence are only
+# required for whichever branch is actually in use (see common.smk), so
+# referencing them unconditionally here would break a Sanger-only project
+# that never set the NGS-only pair at all.
+if sample_list:
+
+    rule get_primer_positions:
+        input:
+            script=f"{scripts_dir}/get_primer_positions.py",
+            refgen_path=refgen_path,
+        output:
+            config["primer_position_file"],
+        log:
+            "logs/get_primer_positions/log.log",
+        conda:
+            "../envs/all.yaml"
+        params:
+            cassette_name=config["cassette_name"],
+            forward_primer=config["forward_primer_sequence"],
+            reverse_primer=config["reverse_primer_sequence"],
+        shell:
+            """
+            python3 {input.script} --genome {input.refgen_path} \
+                --cassette-name {params.cassette_name} \
+                --forward-primer {params.forward_primer} \
+                --reverse-primer {params.reverse_primer} \
+                -o {output} \
+                >{log[0]} 2>&1
+            """
+
+
+if sanger_sample_list:
+
+    rule get_sanger_primer_positions:
+        # A separate file from get_primer_positions above - built from
+        # sanger_forward_primer_sequence/sanger_reverse_primer_sequence, which
+        # default to the same primers but can be overridden for projects where
+        # the Sanger sequencing primer isn't the same one used to build the NGS
+        # library. Cheap to always compute, even when the two end up identical.
+        input:
+            script=f"{scripts_dir}/get_primer_positions.py",
+            refgen_path=refgen_path,
+        output:
+            config["sanger_primer_position_file"],
+        log:
+            "logs/get_sanger_primer_positions/log.log",
+        conda:
+            "../envs/all.yaml"
+        params:
+            cassette_name=config["cassette_name"],
+            forward_primer=config["sanger_forward_primer_sequence"],
+            reverse_primer=config["sanger_reverse_primer_sequence"],
+        shell:
+            """
+            python3 {input.script} --genome {input.refgen_path} \
+                --cassette-name {params.cassette_name} \
+                --forward-primer {params.forward_primer} \
+                --reverse-primer {params.reverse_primer} \
+                -o {output} \
+                >{log[0]} 2>&1
+            """

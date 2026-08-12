@@ -14,6 +14,12 @@ import yaml
 
 argparser = argparse.ArgumentParser(description=__doc__)
 argparser.add_argument("--stats-yml", nargs="*", default=[])
+argparser.add_argument(
+    "--pairs",
+    nargs="*",
+    default=[],
+    help="{sample}_forward.pairs/{sample}_reverse.pairs files",
+)
 argparser.add_argument("--sites", required=True, help="all_sites.bed")
 argparser.add_argument("--output", "-o", required=True)
 args = argparser.parse_args()
@@ -46,18 +52,43 @@ def sample_name_from_path(path):
     return os.path.basename(path).rsplit("_stats.yml", 1)[0]
 
 
+def sample_and_side_from_pairs_path(path):
+    name = os.path.basename(path)
+    for side in ("forward", "reverse"):
+        suffix = f"_{side}.pairs"
+        if name.endswith(suffix):
+            return name[: -len(suffix)], side
+    raise ValueError(f"Can't tell sample/side from {path!r}")
+
+
+def count_pairs(path):
+    """Number of data lines in a .pairs file - pairtools dedup's own filtered
+    stats don't reliably populate a "total" for named filters (unlike
+    no_filter's), so forward/reverse counts are taken directly from the
+    already-filtered per-side pairs files instead of the stats yml.
+    """
+    with open(path) as f:
+        return sum(1 for line in f if not line.startswith("#"))
+
+
+pair_counts = {}
+for path in args.pairs:
+    sample_name, side = sample_and_side_from_pairs_path(path)
+    pair_counts[(sample_name, side)] = count_pairs(path)
+
 rows = []
 for path in args.stats_yml:
     with open(path) as f:
         stat = yaml.safe_load(f) or {}
+    sample_name = sample_name_from_path(path)
     total = stat.get("no_filter", {}).get("total", 0)
     mapped = stat.get("no_filter", {}).get("total_mapped", 0)
-    forward = stat.get("forward", {}).get("total", 0)
-    reverse = stat.get("reverse", {}).get("total", 0)
+    forward = pair_counts.get((sample_name, "forward"), 0)
+    reverse = pair_counts.get((sample_name, "reverse"), 0)
     mobilized = forward + reverse
     rows.append(
         {
-            "sample_name": sample_name_from_path(path),
+            "sample_name": sample_name,
             "total_pairs": total,
             "mapped_pairs": mapped,
             "frac_mapped": mapped / total if total else float("nan"),

@@ -1,2 +1,3 @@
 chr1	30000
 test_cassette	2000
+test_launchpad	42

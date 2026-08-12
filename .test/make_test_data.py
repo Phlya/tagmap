@@ -45,6 +45,22 @@ INSERTIONS = [
     {"pos": 17000, "strand": "-"},
 ]
 
+# A short standalone contig - like SB_launchpad in the real mobilization_FR0_pools
+# project - too small to hold a long read. Deliberately independent random
+# sequence rather than an excerpt of `genome`, so there is no incidental
+# exact-match tie between the two contigs to muddy the test. Exercises
+# sanger_sites.py's runs_off_contig_end: a read that crosses the cassette,
+# the whole of this contig, and keeps going should still pass QC, landing on
+# a second, unrelated, real locus rather than failing as "multiple genomic
+# alignments".
+LAUNCHPAD_CONTIG = "test_launchpad"
+LAUNCHPAD_FLANK = 40
+# Where the escaping read's tail lands - far from both INSERTIONS and clear
+# of CHROM_LENGTH, so it can't be chained into one contiguous alignment with
+# the launchpad contig.
+ESCAPE_POS = 26000
+ESCAPE_LENGTH = 300
+
 COMPLEMENT = {"A": "T", "C": "G", "G": "C", "T": "A", "N": "N"}
 
 
@@ -82,6 +98,22 @@ def build_cassette():
     reverse_at = CASSETTE_TAIL - len(reverse_revcomp)
     cassette[reverse_at : reverse_at + len(reverse_revcomp)] = list(reverse_revcomp)
     return "".join(cassette)
+
+
+def build_launchpad():
+    """A short contig holding just the TA junction plus a short flank."""
+    contig = list(random_seq(len(INSERTION_SEQ) + LAUNCHPAD_FLANK))
+    contig[: len(INSERTION_SEQ)] = list(INSERTION_SEQ)
+    return "".join(contig)
+
+
+def make_escape_read(cassette, launchpad, genome):
+    """A read that crosses the cassette, the whole of a short contig, and
+    keeps going into unrelated real genomic sequence - reproducing a read
+    that outruns a short reference contig."""
+    forward_start, _ = primer_bounds(cassette)
+    cassette_part = cassette[forward_start:]
+    return cassette_part + launchpad + genome[ESCAPE_POS : ESCAPE_POS + ESCAPE_LENGTH]
 
 
 def primer_bounds(cassette):
@@ -184,12 +216,17 @@ if __name__ == "__main__":
 
     genome = build_genome()
     cassette = build_cassette()
+    launchpad = build_launchpad()
 
     write_fasta(
-        os.path.join(RESOURCES, "genome.fa"), {CHROM: genome, CASSETTE: cassette}
+        os.path.join(RESOURCES, "genome.fa"),
+        {CHROM: genome, CASSETTE: cassette, LAUNCHPAD_CONTIG: launchpad},
     )
     with open(os.path.join(RESOURCES, "chromsizes.txt"), "w") as f:
-        f.write(f"{CHROM}\t{CHROM_LENGTH}\n{CASSETTE}\t{CASSETTE_LENGTH}\n")
+        f.write(
+            f"{CHROM}\t{CHROM_LENGTH}\n{CASSETTE}\t{CASSETTE_LENGTH}\n"
+            f"{LAUNCHPAD_CONTIG}\t{len(launchpad)}\n"
+        )
     with open(os.path.join(RESOURCES, "chromsizes_no_cassette.txt"), "w") as f:
         f.write(f"{CHROM}\t{CHROM_LENGTH}\n")
 
@@ -202,15 +239,21 @@ if __name__ == "__main__":
     # case where the NGS library has to vouch for a single Sanger read.
     write_fastq(
         os.path.join(DATA, "plate1.fastq.gz"),
-        make_sanger_reads(genome, cassette, "001", "forward", ["A01", "B01"]),
+        make_sanger_reads(genome, cassette, "001", "forward", ["A01", "B01"])
+        + [("C01_001_F", make_escape_read(cassette, launchpad, genome))],
     )
     write_fastq(
         os.path.join(DATA, "plate2.fastq.gz"),
         make_sanger_reads(genome, cassette, "002", "reverse", ["A01", "B01"])[:1],
     )
 
+    # Single-base intervals at the T/A boundary - the same coordinate
+    # sanger_sites.py/find_insertion_sites.py report (tagmaplib's
+    # insertion_site_from_motif), one base into each planted "TA", rather
+    # than the motif's own start.
     expected = "\n".join(
-        f"{CHROM}\t{ins['pos']}\t{ins['pos'] + len(INSERTION_SEQ)}\t{ins['strand']}"
+        f"{CHROM}\t{ins['pos'] + len(INSERTION_SEQ) // 2}\t"
+        f"{ins['pos'] + len(INSERTION_SEQ) // 2 + 1}\t{ins['strand']}"
         for ins in INSERTIONS
     )
     with open(os.path.join(RESOURCES, "expected_sites.bed"), "w") as f:
