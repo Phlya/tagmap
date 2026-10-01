@@ -3,22 +3,112 @@ localrules:
     combine_all_peaks,
 
 
-rule merge_fastq:
-    input:
-        # The read wildcard is R1/R2, the sample sheet columns are fastq1/fastq2.
-        lambda wildcards: samples.loc[
-            samples["name"] == wildcards.sample, f"fastq{wildcards.read[-1]}"
-        ],
-    output:
-        temp(f"{fastq_folder}/{{sample}}.{{read}}.fastq.gz"),
-    log:
-        "logs/merge_fastq/{sample}_{read}.log",
-    conda:
-        "../envs/all.yaml"
-    shell:
-        """
-        cat {input} >{output} 2>{log[0]}
-        """
+def library_fastqs(wildcards):
+    """The fastq files of one library as listed in samples_path - R1 or R2
+    according to the read wildcard (the sheet's columns are fastq1/fastq2)."""
+    return samples.loc[
+        samples["name"] == wildcards.source, f"fastq{wildcards.read[-1]}"
+    ]
+
+
+if demultiplex:
+
+    # Each library is merged first and then split by in-read barcode into one
+    # sample per plate, named "{plate}_{name}" - which is what everything below
+    # sees, so from here on a plate of a library is an ordinary NGS sample.
+
+    rule merge_library_fastq:
+        input:
+            library_fastqs,
+        output:
+            temp(f"{fastq_folder}/raw/{{source}}.{{read}}.fastq.gz"),
+        log:
+            "logs/merge_fastq/{source}_{read}.log",
+        conda:
+            "../envs/all.yaml"
+        shell:
+            """
+            cat {input} >{output} 2>{log[0]}
+            """
+
+    rule demux:
+        input:
+            r1=f"{fastq_folder}/raw/{{source}}.R1.fastq.gz",
+            r2=f"{fastq_folder}/raw/{{source}}.R2.fastq.gz",
+            barcodes=config["barcodes_path"],
+            script=f"{scripts_dir}/demux_barcodes.py",
+            # tagmaplib validates the barcode sheet, so a change to it reruns
+            # the split too.
+            lib=f"{scripts_dir}/tagmaplib.py",
+        output:
+            r1=temp([f"{fastq_folder}/{plate}_{{source}}.R1.fastq.gz" for plate in all_plates]),
+            r2=temp([f"{fastq_folder}/{plate}_{{source}}.R2.fastq.gz" for plate in all_plates]),
+            stats=f"{stats_folder}/demux/{{source}}_demux.tsv",
+        log:
+            "logs/demux/{source}.log",
+        benchmark:
+            "benchmarks/demux/{source}.tsv"
+        conda:
+            "../envs/all.yaml"
+        threads: 1
+        params:
+            plates=" ".join(all_plates),
+            max_mismatch=config["barcode_max_mismatch"],
+            barcode_reads=config["barcode_reads"],
+            primer_args=(
+                f"--require-primer --forward-primer {config.get('forward_primer_sequence')} "
+                f"--reverse-primer {config.get('reverse_primer_sequence')} "
+                f"--primer-max-mismatch {config['barcode_primer_max_mismatch']}"
+                if config["barcode_require_primer"]
+                else ""
+            ),
+        shell:
+            """
+            python3 {input.script} --r1 {input.r1} --r2 {input.r2} \
+                --barcodes {input.barcodes} --source {wildcards.source} \
+                --plates {params.plates} \
+                --out-r1 {output.r1} --out-r2 {output.r2} \
+                --stats {output.stats} \
+                --max-mismatch {params.max_mismatch} \
+                --barcode-reads {params.barcode_reads} \
+                {params.primer_args} \
+                >{log[0]} 2>&1
+            """
+
+    rule combine_demux_stats:
+        input:
+            expand(f"{stats_folder}/demux/{{source}}_demux.tsv", source=source_list),
+        output:
+            f"{stats_folder}/demux_stats.tsv",
+        log:
+            "logs/combine_demux_stats/log.log",
+        conda:
+            "../envs/all.yaml"
+        shell:
+            """
+            awk 'FNR==1 && NR!=1 {{next}} {{print}}' {input} >{output} 2>{log[0]}
+            """
+
+    localrules:
+        combine_demux_stats,
+
+else:
+
+    rule merge_fastq:
+        input:
+            lambda wildcards: samples.loc[
+                samples["name"] == wildcards.sample, f"fastq{wildcards.read[-1]}"
+            ],
+        output:
+            temp(f"{fastq_folder}/{{sample}}.{{read}}.fastq.gz"),
+        log:
+            "logs/merge_fastq/{sample}_{read}.log",
+        conda:
+            "../envs/all.yaml"
+        shell:
+            """
+            cat {input} >{output} 2>{log[0]}
+            """
 
 
 rule fastqc:
@@ -146,18 +236,31 @@ rule parse2:
     conda:
         "../envs/all.yaml"
     threads: 8
+    params:
+        # Every flag but the input, which differs for an empty BAM (below).
+        parse2="--drop-sam --flip --min-mapq 1 --max-insert-size 5000 "
+        "--add-columns pos5,pos3,read_len,mapq --add-pair-index "
+        "--report-position junction --report-orientation pair",
     shell:
         """
-        pairtools parse2 -c {input.chromsizes} --drop-sam --flip \
-            --min-mapq 1 \
-            --max-insert-size 5000 \
-            --add-columns pos5,pos3,read_len,mapq \
-            --add-pair-index \
-            --report-position junction \
-            --report-orientation pair \
-            {input.bam} \
-            | pairtools sort --nproc {threads} -o {output.pairs} \
-                >{log[0]} 2>&1
+        # pairtools parse2 crashes on a BAM with no alignments at all (it never
+        # works out its own column list), which is what a sample with no reads
+        # is - e.g. a plate with nothing in one well, once demultiplexed.
+        # Giving it one unmapped placeholder pair makes it write the same
+        # header as for any other sample, and the placeholder is then dropped,
+        # leaving a valid, empty pairs file for the rest of the workflow.
+        if [ "$(samtools view -c {input.bam})" = "0" ]; then
+            ( samtools view -h {input.bam}; \
+              printf 'placeholder\t77\t*\t0\t0\t*\t*\t0\t0\tN\tI\n' ; \
+              printf 'placeholder\t141\t*\t0\t0\t*\t*\t0\t0\tN\tI\n' ) \
+                | pairtools parse2 -c {input.chromsizes} {params.parse2} - 2>{log[0]} \
+                | pairtools select 'False' 2>>{log[0]} \
+                | pairtools sort --nproc {threads} -o {output.pairs} >>{log[0]} 2>&1
+        else
+            pairtools parse2 -c {input.chromsizes} {params.parse2} {input.bam} \
+                | pairtools sort --nproc {threads} -o {output.pairs} \
+                    >{log[0]} 2>&1
+        fi
         """
 
 

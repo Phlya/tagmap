@@ -49,6 +49,7 @@ rule find_insertion_sites:
     output:
         output=f"{insertion_sites_folder}/all_sites.bed",
         for_ucsc=f"{insertion_sites_folder}/all_sites_for_ucsc.bed",
+        support=f"{insertion_sites_folder}/all_sites_support.tsv",
         confirmed=f"{insertion_sites_folder}/confirmed_ngs_sites.bed",
         confirmed_no_cassette=f"{insertion_sites_folder}/confirmed_ngs_sites_no_cassette.bed",
     log:
@@ -81,6 +82,7 @@ rule find_insertion_sites:
             --min-orientation-support-confirmed {params.min_orientation_support_confirmed} \
             {params.chromsizes_arg} \
             -o {output.output} --output-for-ucsc {output.for_ucsc} \
+            --output-support {output.support} \
             --output-confirmed {output.confirmed} \
             --output-confirmed-no-cassette {output.confirmed_no_cassette} \
             >{log[0]} 2>&1

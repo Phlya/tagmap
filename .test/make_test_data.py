@@ -210,6 +210,83 @@ def make_sanger_reads(genome, cassette, plate, direction, wells, length=540):
     ]
 
 
+# Barcodes of the demultiplexing/clone test: the staggered-length ones this
+# pipeline was designed around. Two per side per plate, so every plate mixes
+# lengths, and a read carries a random one of them.
+BARCODES = {
+    "plate1": {
+        "forward": ["TTATTCGAGG", "AAGATTGGATA"],
+        "reverse": ["GTAACATGCG", "ACAGTAACTAT"],
+    },
+    "plate2": {
+        "forward": ["TGTAGTCATTGG", "ACAATGTGAACTA"],
+        "reverse": ["TGCGCGGTTTAC", "TGCAATGTTCGAT"],
+    },
+}
+
+
+def clone_pairs(genome, cassette, rng, name, offsets_by_insertion, plate, mismatch=0):
+    """Barcoded read pairs of one clone: R1 genomic, R2 starting with the
+    plate's barcode and then the ITR primer, as the library is built.
+
+    offsets_by_insertion maps an INSERTIONS index to how many distinct
+    tagmentation positions to plant there per side - the clone's molecules.
+    `mismatch` pairs get a base of their barcode changed, which demultiplexing
+    has to forgive.
+    """
+    r1, r2 = [], []
+    for index, n_offsets in offsets_by_insertion.items():
+        insertion = INSERTIONS[index]
+        for side in ("forward", "reverse"):
+            cassette_mate = read_from_primer(
+                genome, cassette, insertion, side, READ_LENGTH
+            )
+            for offset in range(n_offsets):
+                barcode = rng.choice(BARCODES[plate][side])
+                if len(r1) < mismatch:
+                    flipped = "A" if barcode[-1] != "A" else "C"
+                    barcode = barcode[:-1] + flipped
+                read_name = f"{name}_{plate}_{index}_{side}_{offset}"
+                r1.append((read_name, genomic_mate(genome, insertion, side, offset)))
+                r2.append((read_name, barcode + cassette_mate))
+    return r1, r2
+
+
+def make_clone_library(genome, cassette, rng, name, plates):
+    """One library (a well) mixing the reads of several plates, plus a few
+    pairs with no barcode at all, shuffled as they would be off the sequencer.
+
+    plates maps a plate to {INSERTIONS index: molecules per side}, or to
+    nothing for a plate with no reads in this well.
+    """
+    r1, r2 = [], []
+    for plate, offsets in plates.items():
+        if offsets:
+            more1, more2 = clone_pairs(genome, cassette, rng, name, offsets, plate, mismatch=1)
+            r1 += more1
+            r2 += more2
+    # Barcode-less pairs, e.g. from the neighbouring library's PCR
+    stray1, stray2 = make_ngs_reads(genome, cassette, f"{name}_stray", n_per_site=1)
+    r1 += stray1[:3]
+    r2 += stray2[:3]
+    order = list(range(len(r1)))
+    rng.shuffle(order)
+    return [r1[i] for i in order], [r2[i] for i in order]
+
+
+# What each (well, plate) of the clone test holds, and so what the workflow is
+# expected to call - see check_clones.py. Insertion indices are into INSERTIONS.
+CLONE_LIBRARIES = {
+    # One dominant site on each plate: clean.
+    "A01": {"plate1": {0: 40}, "plate2": {1: 40}},
+    # A small contaminant (2 molecules per side beside 40) on plate1, and two
+    # equal insertions on plate2.
+    "B01": {"plate1": {0: 40, 1: 2}, "plate2": {0: 40, 1: 40}},
+    # Too few reads on plate1, and nothing at all on plate2.
+    "C01": {"plate1": {0: 2}, "plate2": {}},
+}
+
+
 if __name__ == "__main__":
     os.makedirs(RESOURCES, exist_ok=True)
     os.makedirs(DATA, exist_ok=True)
@@ -246,6 +323,18 @@ if __name__ == "__main__":
         os.path.join(DATA, "plate2.fastq.gz"),
         make_sanger_reads(genome, cassette, "002", "reverse", ["A01", "B01"])[:1],
     )
+
+    clone_rng = random.Random(20260901)
+    for well, plates in CLONE_LIBRARIES.items():
+        r1, r2 = make_clone_library(genome, cassette, clone_rng, well, plates)
+        write_fastq(os.path.join(DATA, f"clones_{well}.R1.fastq.gz"), r1)
+        write_fastq(os.path.join(DATA, f"clones_{well}.R2.fastq.gz"), r2)
+    with open(os.path.join(RESOURCES, "barcodes.tsv"), "w") as f:
+        f.write("plate\tside\tbarcode\n")
+        for plate, sides in BARCODES.items():
+            for side, sequences in sides.items():
+                for sequence in sequences:
+                    f.write(f"{plate}\t{side}\t{sequence}\n")
 
     # Single-base intervals at the T/A boundary - the same coordinate
     # sanger_sites.py/find_insertion_sites.py report (tagmaplib's

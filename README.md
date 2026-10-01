@@ -15,6 +15,9 @@ be run together or on their own:
   read pairs anchored at an ITR primer, and turned into peaks and then
   single-base insertion sites. Suited to pooled populations, and reports both
   sides of an insertion when both were captured.
+  Libraries of single clonal lines (`ngs_mode: clone`) are additionally judged
+  on whether one site dominates and nothing else is present, and barcoded
+  libraries can be demultiplexed by plate first (`barcodes_path`).
 - **Sanger**: individual long reads from a clonal line - typically `.ab1`
   traces from one well per clone - are mapped directly, and the exact
   cassette/genome junction is read off each read. Suited to identifying the

@@ -20,6 +20,7 @@ wildcard_constraints:
     ),
     side="forward|reverse",
     read="R1|R2",
+    source="({})".format("|".join(re.escape(s) for s in source_list) or "^$"),
 
 
 rule all:
@@ -34,6 +35,10 @@ if sample_list:
 
     include: "rules/ngs.smk"
     include: "rules/sites.smk"
+
+    if clone_mode:
+
+        include: "rules/clones.smk"
 
 
 if sanger_sample_list:

@@ -13,6 +13,13 @@ properties:
     type: string
     description: Path to the R2 fastq(.gz).
 
+  plates:
+    type: string
+    description: >
+      Only with barcodes_path: comma-separated plates (as named in the barcode
+      sheet) expected in this library. Defaults to every plate in the sheet;
+      listing fewer avoids processing plates known to be absent.
+
 required:
   - name
   - fastq1

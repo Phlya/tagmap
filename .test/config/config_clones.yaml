@@ -1,0 +1,46 @@
+# Barcoded, per-clone NGS (ngs_mode: clone), on the same miniature genome as
+# config.yaml. Built by make_test_data.py; checked by check_clones.py.
+# Run from .test:  snakemake --configfile config/config_clones.yaml ...
+samples_path: 'config/samples_clones.tsv'
+
+refgen_path: 'resources/genome.fa'
+chrom_sizes_path: 'resources/chromsizes.txt'
+chrom_sizes_path_no_cassette: 'resources/chromsizes_no_cassette.txt'
+
+mapper: 'bwa-mem'
+
+do_fastqc: False
+trim: False
+dedup: False
+
+cassette_name: 'test_cassette'
+forward_primer_sequence: 'GGTGATCCTAACTGACCTAAGAC'
+reverse_primer_sequence: 'AACGAGTTTTAATGACTCCAACTT'
+insertion_seq: 'TA'
+
+peak_caller: 'junction_tiered'
+min_peak_width: 1
+min_peak_reads: 5
+min_peak_frac: 0.001
+min_peak_dist: 1000
+min_peak_positions: 1
+max_dist_between_sides: 300
+
+# Barcodes: staggered lengths, two per side per plate, on R2 (the ITR read)
+barcodes_path: 'resources/barcodes.tsv'
+barcode_max_mismatch: 1
+barcode_reads: 'R2'
+barcode_require_primer: True
+
+ngs_mode: 'clone'
+clone_min_reads: 10
+clone_min_molecules: 3
+clone_max_contamination_frac: 0.02
+clone_multi_site_frac: 0.2
+
+# chr1:17001 is the planted insertion A01 carries on plate2, so that clone
+# exercises the unmobilized call.
+original_insertion_site: 'chr1:17001'
+original_insertion_max_dist: 25
+
+results_folder: 'results_clones'

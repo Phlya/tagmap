@@ -346,6 +346,32 @@ def draw_plate(pdf, sample_name, group, dedup_names=frozenset(), new_page=True):
     return True
 
 
+def draw_clone_plate(pdf, plate, group, new_page=True):
+    """One color-coded well grid for a plate of NGS clones (see
+    tagmaplib.clone_plate_wells), packed under the previous one if
+    new_page=False and it fits, as draw_plate does. Returns True if anything
+    was drawn - False if no library name parses as a well."""
+    wells = {
+        position: (color, marker, False, False)
+        for position, (_, color, marker) in tagmaplib.clone_plate_wells(group).items()
+    }
+    if not wells:
+        return False
+    n_rows, n_cols = tagmaplib.plate_layout(wells.keys())
+    block_height = 8 + 1 + WELL_LABEL + n_rows * tagmaplib.WELL_PITCH_MM
+    if new_page or pdf.get_y() + block_height > pdf.page_break_trigger:
+        pdf.add_page(orientation="P")
+    pdf.set_font("helvetica", style="B", size=12)
+    pdf.cell(
+        0, 8, tagmaplib.clone_plate_label(plate), new_x="LMARGIN", new_y="NEXT"
+    )
+    pdf.ln(1)
+    x0, y0 = pdf.get_x(), pdf.get_y()
+    draw_well_grid(pdf, x0, y0, wells, n_rows, n_cols)
+    pdf.set_xy(x0, y0 + WELL_LABEL + n_rows * tagmaplib.WELL_PITCH_MM + 4)
+    return True
+
+
 def draw_read_qc_plate(pdf, sample_name, group):
     """Forward and reverse color-coded well grids for one plate's read QC
     (tagmaplib.read_qc_status), side by side on one landscape page so a
@@ -397,6 +423,8 @@ def draw_read_qc_plate(pdf, sample_name, group):
 if __name__ == "__main__":
     argparser = argparse.ArgumentParser(description=__doc__)
     argparser.add_argument("--ngs-qc", default=None)
+    argparser.add_argument("--demux", default=None, help="demux_stats.tsv")
+    argparser.add_argument("--ngs-clones", default=None, help="ngs_clone_summary.tsv")
     argparser.add_argument("--sanger-qc", default=None)
     argparser.add_argument("--sanger-clones", default=None)
     argparser.add_argument("--sanger-positions", default=None)
@@ -423,7 +451,7 @@ if __name__ == "__main__":
     # A4 portrait's ~190mm usable width, unlike every other section's table.
     # ngs_qc is similarly wide once its raw/forward/reverse pair columns are
     # all included.
-    LANDSCAPE_SECTIONS = {"ngs_qc", "sanger_clones"}
+    LANDSCAPE_SECTIONS = {"ngs_qc", "ngs_clones", "sanger_clones"}
 
     # The title page doubles as the first section's own page (see
     # first_section below), so its orientation has to match whichever
@@ -483,7 +511,29 @@ if __name__ == "__main__":
                     if color == tagmaplib.CLONE_GREEN and row.in_region
                 }
 
-        if attr == "ngs_qc":
+        if attr == "demux":
+            libraries, plates = tagmaplib.demux_tables(df)
+            pdf.set_font("helvetica", style="B", size=11)
+            pdf.cell(0, 7, "Per library", new_x="LMARGIN", new_y="NEXT")
+            add_table(pdf, tagmaplib.tidy_numeric_dtypes(libraries))
+            pdf.ln(3)
+            pdf.set_font("helvetica", style="B", size=11)
+            pdf.cell(0, 7, "Per plate", new_x="LMARGIN", new_y="NEXT")
+            add_table(pdf, tagmaplib.tidy_numeric_dtypes(plates))
+        elif attr == "ngs_clones":
+            add_table(
+                pdf,
+                df[tagmaplib.CLONE_REPORT_COLUMNS],
+                [
+                    tagmaplib.CLONE_STATUS_COLORS.get(status, tagmaplib.READ_QC_GREY)
+                    for status in df["status"]
+                ],
+            )
+            plates_drawn = 0
+            for plate, group in df.groupby("plate", dropna=False):
+                if draw_clone_plate(pdf, plate, group, new_page=plates_drawn % 2 == 0):
+                    plates_drawn += 1
+        elif attr == "ngs_qc":
             # Raw and deduplicated/sidedness columns together are too wide
             # for one readable table, even in landscape - see
             # tagmaplib.NGS_QC_RAW_COLUMNS.

@@ -35,6 +35,41 @@ SECTIONS = [
         "primer.",
     ),
     (
+        "demux",
+        "Demultiplexing",
+        "How each library's read pairs were split by the in-read barcode at "
+        "the start of the ITR read. no_barcode pairs carried none of the "
+        "listed barcodes; conflict pairs carried barcodes that disagree on "
+        "the plate; primer_mismatch pairs (only with barcode_require_primer) "
+        "had a barcode not followed by its own ITR primer. Per plate, "
+        "barcodes is how many of that plate's barcodes were seen at all out "
+        "of those listed - one that never turns up usually means it was "
+        "left out of the pool - and frac_with_mismatch is the share of "
+        "assigned pairs that matched only with mismatches.",
+    ),
+    (
+        "ngs_clones",
+        "NGS clones",
+        "One row per clonal library: whether a single insertion site "
+        "dominates and nothing else is present above background. Sites are "
+        "positioned and counted as in the pool analysis - abundance is "
+        "independent molecules (distinct tagmentation positions), not reads. "
+        "dominant_frac is the dominant site's share of all the clone's "
+        "molecules and second_frac the runner-up's. Status: clean - one "
+        "site, nothing else at or above clone_max_contamination_frac; "
+        "contaminated - a second site at or above it (shared_with names "
+        "other clones whose dominant site this is, i.e. likely cross-talk); "
+        "multiple - a second site at or above clone_multi_site_frac, so "
+        "really more than one insertion or a mix of clones; unmobilized - "
+        "clean, but at the original insertion site; weak - too few "
+        "molecules behind the dominant site (or, with "
+        "clone_require_both_sides, seen from one ITR only); no_insertion - "
+        "reads but no site; too_few_reads - fewer than clone_min_reads "
+        "mobilized pairs. In the plate grids below: green - clean (with a "
+        '"u" for unmobilized), yellow - contaminated or weak, red - '
+        "multiple or no insertion, grey - too few reads.",
+    ),
+    (
         "sanger_qc",
         "Sanger QC",
         "Sanger reads per run and ITR primer direction: how many passed QC, "
@@ -290,6 +325,28 @@ def plate_html(sample_name, group, dedup_names=frozenset()):
     )
 
 
+def clone_plate_html(plate, group):
+    """A well grid for one plate of NGS clones, coloured by status (see
+    tagmaplib.CLONE_STATUS_COLORS). None if none of the libraries' names look
+    like wells."""
+    wells = {
+        position: (title, color, marker, False, False)
+        for position, (title, color, marker) in tagmaplib.clone_plate_wells(
+            group
+        ).items()
+    }
+    if not wells:
+        return None
+    n_rows, n_cols = tagmaplib.plate_layout(wells.keys())
+    return "\n".join(
+        [
+            f"**{html.escape(tagmaplib.clone_plate_label(plate))}**",
+            "",
+            well_grid_html(wells, n_rows, n_cols),
+        ]
+    )
+
+
 def read_qc_plate_html(sample_name, group):
     """Forward and reverse color-coded well grids for one plate's read QC
     (tagmaplib.read_qc_status), side by side on the same page so a well's
@@ -336,6 +393,8 @@ def read_qc_plate_html(sample_name, group):
 if __name__ == "__main__":
     argparser = argparse.ArgumentParser(description=__doc__)
     argparser.add_argument("--ngs-qc", default=None)
+    argparser.add_argument("--demux", default=None, help="demux_stats.tsv")
+    argparser.add_argument("--ngs-clones", default=None, help="ngs_clone_summary.tsv")
     argparser.add_argument("--sanger-qc", default=None)
     argparser.add_argument("--sanger-clones", default=None)
     argparser.add_argument("--sanger-positions", default=None)
@@ -367,6 +426,30 @@ if __name__ == "__main__":
         lines.append("")
         if df.shape[0] == 0:
             lines.append("_No data._")
+        elif attr == "demux":
+            libraries, plates = tagmaplib.demux_tables(df)
+            lines.append("### Per library")
+            lines.append("")
+            lines.append(tagmaplib.to_markdown(tagmaplib.tidy_numeric_dtypes(libraries)))
+            lines.append("")
+            lines.append("### Per plate")
+            lines.append("")
+            lines.append(tagmaplib.to_markdown(tagmaplib.tidy_numeric_dtypes(plates)))
+        elif attr == "ngs_clones":
+            counts = df["status"].value_counts()
+            lines.append(
+                "**"
+                + ", ".join(f"{n} {status}" for status, n in counts.items())
+                + f" of {df.shape[0]} clones.**"
+            )
+            lines.append("")
+            lines.append(tagmaplib.to_markdown(df[tagmaplib.CLONE_REPORT_COLUMNS]))
+            lines.append("")
+            for plate, group in df.groupby("plate", dropna=False):
+                grid = clone_plate_html(plate, group)
+                if grid is not None:
+                    lines.append(grid)
+                    lines.append("")
         elif attr == "ngs_qc":
             # Raw and deduplicated/sidedness columns together are too wide
             # for one readable table - see tagmaplib.NGS_QC_RAW_COLUMNS.

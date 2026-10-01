@@ -1,0 +1,4 @@
+name	fastq1	fastq2	plates
+A01	data/clones_A01.R1.fastq.gz	data/clones_A01.R2.fastq.gz	
+B01	data/clones_B01.R1.fastq.gz	data/clones_B01.R2.fastq.gz	
+C01	data/clones_C01.R1.fastq.gz	data/clones_C01.R2.fastq.gz	

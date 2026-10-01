@@ -7,8 +7,9 @@ properties:
   samples_path:
     type: string
     description: >
-      TSV of paired-end NGS libraries (columns name, fastq1, fastq2). Rows
-      sharing a name are merged. Leave unset for a Sanger-only run.
+      TSV of paired-end NGS libraries (columns name, fastq1, fastq2, and
+      optionally plates). Rows sharing a name are merged. Leave unset for a
+      Sanger-only run.
   sanger_samples_path:
     type: string
     description: >
@@ -75,6 +76,102 @@ properties:
     description: >
       Motif the transposon integrates into - TA for Sleeping Beauty, TTAA for
       PiggyBac. Sites are snapped onto the nearest occurrence.
+
+  # ----------------------------------------------------------- NGS libraries --
+  ngs_mode:
+    type: string
+    enum: ["pool", "clone"]
+    default: "pool"
+    description: >
+      What an NGS library is. "pool" is a population of cells carrying many
+      independent insertions, summarised by the sites found. "clone" is one
+      clonal line, expected to carry a single insertion at a few hundred to a
+      few thousand reads: the site calling is the same, but each library is
+      then also judged on whether one position dominates and nothing else is
+      present above background - see ngs_clone_summary.tsv and the clone_*
+      settings. Per-sample genome browser tracks are not requested in clone
+      mode, since there are too many libraries for them to be useful.
+  barcodes_path:
+    type: string
+    description: >
+      TSV (columns plate, side, barcode) of the in-read barcodes that label
+      plates, to demultiplex each library in samples_path by - see
+      demux_barcodes.py. side is forward or reverse: the ITR the read
+      carrying that barcode starts at. A plate may list several barcodes per
+      side (e.g. staggered lengths to add diversity to the first bases of the
+      library); a read carries any one of them, and they all label the same
+      plate. Every library in samples_path is then split into one sample per
+      plate, named "{plate}_{name}". Leave unset for libraries that are not
+      barcoded.
+  barcode_max_mismatch:
+    type: integer
+    default: 1
+    description: >
+      Mismatches tolerated when matching a barcode to the start of a read.
+      Barcodes are checked at startup to differ from each other by more than
+      twice this, so it can never make two of them ambiguous.
+  barcode_reads:
+    type: string
+    enum: ["R1", "R2", "either"]
+    default: "R2"
+    description: >
+      Which read the barcode starts. It is on the read that starts at the ITR
+      primer, which is R2 in the usual TagMap layout.
+  barcode_require_primer:
+    type: boolean
+    default: false
+    description: >
+      Only accept a barcode that is directly followed by the ITR primer of its
+      own side (forward_primer_sequence for forward barcodes,
+      reverse_primer_sequence for reverse ones). Stricter, and a check on the
+      read layout, but wrong if anything sits between barcode and primer.
+  barcode_primer_max_mismatch:
+    type: integer
+    default: 2
+    description: Mismatches tolerated in that primer check.
+  clone_min_reads:
+    type: integer
+    default: 20
+    description: >
+      ngs_mode clone only. A clone with fewer mobilized (junction) read pairs
+      than this is called too_few_reads rather than judged on too little.
+  clone_min_molecules:
+    type: integer
+    default: 3
+    description: >
+      ngs_mode clone only. The dominant site needs at least this many distinct
+      molecules (tagmentation positions, not reads - PCR copies do not count)
+      behind it, or the clone is called weak.
+  clone_max_contamination_frac:
+    type: number
+    default: 0.02
+    description: >
+      ngs_mode clone only. Another called site holding at least this fraction
+      of the clone's molecules makes it contaminated. Tune on real data - the
+      right level depends on how much barcode cross-talk and index hopping the
+      run has.
+  clone_multi_site_frac:
+    type: number
+    default: 0.2
+    description: >
+      ngs_mode clone only. Another site holding at least this fraction means
+      the clone really carries more than one insertion (or is a mix of
+      clones): multiple rather than contaminated.
+  clone_merge_dist:
+    type: integer
+    default: 0
+    description: >
+      ngs_mode clone only. A site seen from one ITR side only, within this many
+      bases of one seen only from the other, is folded into it as one
+      insertion whose two sides were positioned slightly apart, instead of
+      counting as two sites. 0 (default) never does; max_dist_between_sides
+      already combines sides within a site.
+  clone_require_both_sides:
+    type: boolean
+    default: false
+    description: >
+      ngs_mode clone only. Call a clone weak unless its dominant site was seen
+      from both ITR primers, rather than accepting one side alone.
 
   # ---------------------------------------------------------- NGS analysis --
   do_fastqc:

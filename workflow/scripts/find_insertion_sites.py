@@ -91,6 +91,13 @@ argparser.add_argument(
 argparser.add_argument("--output", "-o", required=True)
 argparser.add_argument("--output-for-ucsc", required=True)
 argparser.add_argument(
+    "--output-support",
+    default=None,
+    help="Optional TSV with how many independent molecules (distinct "
+    "tagmentation positions, as counted by the peak caller) back each site "
+    "from each ITR side. Same sites, in the same order, as --output.",
+)
+argparser.add_argument(
     "--output-confirmed",
     required=True,
     help="Sites seen from both sides (site_sides == 'both') with a resolved "
@@ -104,6 +111,15 @@ argparser.add_argument(
     help="--output-confirmed with the construct/landing-pad contigs dropped "
     "(see --chromsizes).",
 )
+
+
+SUPPORT_COLUMNS = tagmaplib.SITE_COLUMNS[:4] + [
+    "strand",
+    "site_sides",
+    "n_forward",
+    "n_reverse",
+    "n_molecules",
+]
 
 
 def determine_direction(series):
@@ -211,6 +227,10 @@ if __name__ == "__main__":
         empty[tagmaplib.SITE_COLUMNS].to_csv(
             args.output_for_ucsc, sep="\t", index=False, header=False
         )
+        if args.output_support is not None:
+            pd.DataFrame(columns=SUPPORT_COLUMNS).to_csv(
+                args.output_support, sep="\t", index=False
+            )
         tagmaplib.write_bed(empty, args.output_confirmed, columns=tagmaplib.SITE_COLUMNS)
         tagmaplib.write_bed(
             empty, args.output_confirmed_no_cassette, columns=tagmaplib.SITE_COLUMNS
@@ -291,15 +311,32 @@ if __name__ == "__main__":
     peaks["end"] = peaks["cluster_end"]
 
     peaks = peaks[
-        ["chrom", "start", "end", "sample_name", "fraction", "strand", "site_sides"]
-    ]
+        [
+            "chrom",
+            "start",
+            "end",
+            "sample_name",
+            "fraction",
+            "strand",
+            "site_sides",
+            "side",
+            "count",
+        ]
+    ].copy()
+    peaks["n_forward"] = peaks["count"].where(peaks["side"] == "+", 0)
+    peaks["n_reverse"] = peaks["count"].where(peaks["side"] == "-", 0)
     peaks = (
         peaks.groupby(
             ["chrom", "start", "end", "sample_name", "strand", "site_sides"]
-        )["fraction"]
-        .mean()
+        )
+        .agg(
+            fraction=("fraction", "mean"),
+            n_forward=("n_forward", "sum"),
+            n_reverse=("n_reverse", "sum"),
+        )
         .reset_index()
     )
+    peaks["n_molecules"] = peaks["n_forward"] + peaks["n_reverse"]
     peaks["score"] = (peaks["fraction"] * 1000).round().astype(int)
     peaks = peaks.drop_duplicates().reset_index(drop=True)
     peaks = bioframe.expand(peaks, len(ins_seq))
@@ -313,11 +350,16 @@ if __name__ == "__main__":
     pinpointed[f"{ins_seq}_found"] = found
     pinpointed.loc[found, "start"] = site[found]
     pinpointed.loc[found, "end"] = site[found] + 1
+    support = pinpointed[SUPPORT_COLUMNS]
     pinpointed = pinpointed[tagmaplib.SITE_COLUMNS + [f"{ins_seq}_found", "site_sides"]]
 
     pinpointed.sort_values(["chrom", "start", "end", "sample_name"]).to_csv(
         args.output, sep="\t", index=False, header=True
     )
+    if args.output_support is not None:
+        support.sort_values(["chrom", "start", "end", "sample_name"]).to_csv(
+            args.output_support, sep="\t", index=False
+        )
 
     pinpointed[tagmaplib.SITE_COLUMNS].sort_values(
         ["sample_name", "chrom", "start", "end"]

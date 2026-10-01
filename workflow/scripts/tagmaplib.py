@@ -565,3 +565,236 @@ def format_cell(value):
     if isinstance(value, float):
         return f"{value:.2f}"
     return str(value)
+
+
+# --- Barcode demultiplexing (demux_barcodes.py) ------------------------------
+
+BARCODE_COLUMNS = ["plate", "side", "barcode"]
+BARCODE_SIDES = ("forward", "reverse")
+
+
+def prefix_distance(a, b):
+    """Hamming distance between two barcodes over their shared prefix.
+
+    Staggered barcodes differ in length, but a read is only ever compared to a
+    barcode over that barcode's own length, so two of them are confusable to
+    the extent that their common prefix is - never more.
+    """
+    n = min(len(a), len(b))
+    return sum(x != y for x, y in zip(a[:n], b[:n]))
+
+
+def read_barcodes(path, max_mismatch=1):
+    """Read and validate a barcode sheet (columns plate, side, barcode).
+
+    Several barcodes may share a plate and side - a plate pooled over a mix of
+    staggered-length barcodes for Illumina's sake - and all of them label that
+    plate. Checked here, at parse time, rather than left to misassign reads
+    quietly later: every barcode has to stay distinguishable from every other
+    after up to max_mismatch errors, i.e. their prefix distance has to exceed
+    2*max_mismatch. That also rules out one barcode being a prefix of another,
+    which would make the length to trim ambiguous.
+    """
+    barcodes = pd.read_table(path, comment="#", dtype=str).dropna(how="all")
+    missing = [c for c in BARCODE_COLUMNS if c not in barcodes.columns]
+    if missing:
+        raise ValueError(
+            f"Barcode sheet {path} is missing column(s) {missing}; it needs "
+            f"{BARCODE_COLUMNS}."
+        )
+    barcodes = barcodes[BARCODE_COLUMNS].apply(lambda s: s.str.strip())
+    barcodes["barcode"] = barcodes["barcode"].str.upper()
+    barcodes["side"] = barcodes["side"].str.lower()
+    bad_side = barcodes[~barcodes["side"].isin(BARCODE_SIDES)]
+    if bad_side.shape[0]:
+        raise ValueError(
+            f"Barcode sheet {path}: side must be one of {BARCODE_SIDES}, got "
+            f"{sorted(bad_side['side'].unique())}."
+        )
+    bad_seq = barcodes[~barcodes["barcode"].str.fullmatch(r"[ACGT]+")]
+    if bad_seq.shape[0]:
+        raise ValueError(
+            f"Barcode sheet {path}: barcodes may only contain A, C, G, T; got "
+            f"{sorted(bad_seq['barcode'].unique())}."
+        )
+    if barcodes.shape[0] == 0:
+        raise ValueError(f"Barcode sheet {path} has no barcodes.")
+    if barcodes["barcode"].duplicated().any():
+        raise ValueError(
+            f"Barcode sheet {path}: barcode(s) listed more than once: "
+            f"{sorted(barcodes.loc[barcodes['barcode'].duplicated(), 'barcode'])}."
+        )
+    rows = list(barcodes.itertuples(index=False))
+    for i, first in enumerate(rows):
+        for second in rows[i + 1 :]:
+            distance = prefix_distance(first.barcode, second.barcode)
+            if distance <= 2 * max_mismatch:
+                raise ValueError(
+                    f"Barcodes {first.barcode} ({first.plate}, {first.side}) and "
+                    f"{second.barcode} ({second.plate}, {second.side}) differ at "
+                    f"only {distance} position(s) over their shared prefix, so "
+                    f"reads can't be told apart with up to {max_mismatch} "
+                    f"mismatch(es) allowed (needs more than {2 * max_mismatch})."
+                )
+    return barcodes.reset_index(drop=True)
+
+
+# --- Per-clone NGS calls (ngs_clone_stats.py) --------------------------------
+
+CLONE_STATUS_CLEAN = "clean"
+CLONE_STATUS_CONTAMINATED = "contaminated"
+CLONE_STATUS_MULTIPLE = "multiple"
+CLONE_STATUS_UNMOBILIZED = "unmobilized"
+CLONE_STATUS_WEAK = "weak"
+CLONE_STATUS_NO_INSERTION = "no_insertion"
+CLONE_STATUS_TOO_FEW_READS = "too_few_reads"
+
+# Same palette as the Sanger clone grid, so a plate reads the same way
+# whichever assay it came from: green is a usable single site, yellow is
+# usable but worth a look, red is not usable, grey is not enough data to say.
+CLONE_STATUS_COLORS = {
+    CLONE_STATUS_CLEAN: CLONE_GREEN,
+    CLONE_STATUS_UNMOBILIZED: CLONE_GREEN,
+    CLONE_STATUS_CONTAMINATED: CLONE_YELLOW,
+    CLONE_STATUS_WEAK: CLONE_YELLOW,
+    CLONE_STATUS_MULTIPLE: CLONE_RED,
+    CLONE_STATUS_NO_INSERTION: CLONE_RED,
+    CLONE_STATUS_TOO_FEW_READS: READ_QC_GREY,
+}
+
+CLONE_SUMMARY_COLUMNS = [
+    "sample_name",
+    "plate",
+    "well",
+    "status",
+    "n_pairs",
+    "n_sites",
+    "n_molecules",
+    "chrom",
+    "start",
+    "end",
+    "strand",
+    "sides",
+    "dominant_molecules",
+    "dominant_frac",
+    "second_position",
+    "second_molecules",
+    "second_frac",
+    "n_secondary_sites",
+    "at_original_site",
+    "shared_with",
+    "reason",
+]
+
+# Columns of ngs_clone_summary.tsv shown in the reports - the rest (end, plate,
+# well, the raw molecule counts of the runner-up) are in the TSV for whoever
+# wants them, but make the table too wide to read.
+CLONE_REPORT_COLUMNS = [
+    "sample_name",
+    "status",
+    "n_pairs",
+    "n_sites",
+    "chrom",
+    "start",
+    "strand",
+    "sides",
+    "dominant_molecules",
+    "dominant_frac",
+    "second_position",
+    "second_frac",
+    "shared_with",
+    "reason",
+]
+
+
+def clone_plate_wells(group):
+    """{(row, col): (title, colour, marker)} for one plate of ngs_clone_summary
+    rows, for drawing its well grid. Wells whose library name does not parse
+    as a well (see parse_well) are left out, since not every project names its
+    libraries after wells. Unmobilized clones get a "u", like the Sanger grid.
+    """
+    wells = {}
+    for row in group.itertuples():
+        position = parse_well(row.well)
+        if position is None:
+            continue
+        wells[position] = (
+            f"{row.well}: {row.status}",
+            CLONE_STATUS_COLORS.get(row.status, READ_QC_GREY),
+            "u" if row.status == CLONE_STATUS_UNMOBILIZED else None,
+        )
+    return wells
+
+
+def clone_plate_label(plate):
+    return f"Plate: {plate}" if isinstance(plate, str) and plate else "Plate"
+
+
+def demux_tables(stats):
+    """Per-library and per-plate summaries of demux_stats.tsv.
+
+    The raw file has a row per library, barcode and outcome - a useful audit
+    trail, but too long to read. Returns (libraries, plates): how each
+    library's pairs divided into assigned/unassigned, and how the assigned
+    ones divided over plates, with how many of the plate's barcodes turned up
+    at all (a barcode that never does is the first sign of a pooling mistake)
+    and how many matched only with mismatches.
+    """
+    outcomes = ["assigned", "no_barcode", "conflict", "primer_mismatch"]
+    totals = stats.pivot_table(
+        index="source", columns="category", values="n_pairs", aggfunc="sum", fill_value=0
+    ).reindex(columns=outcomes, fill_value=0)
+    totals["total_pairs"] = totals.sum(axis=1)
+    totals["frac_assigned"] = totals["assigned"] / totals["total_pairs"].where(
+        totals["total_pairs"] > 0
+    )
+    totals.columns.name = None
+    libraries = (
+        totals.rename(columns={"assigned": "assigned_pairs"})
+        .reset_index()
+        .rename(columns={"source": "library"})[
+            [
+                "library",
+                "total_pairs",
+                "assigned_pairs",
+                "frac_assigned",
+                "no_barcode",
+                "conflict",
+                "primer_mismatch",
+            ]
+        ]
+    )
+
+    assigned = stats[stats["category"] == "assigned"].copy()
+    assigned["with_mismatch"] = assigned["n_pairs"].where(assigned["mismatches"] > 0, 0)
+    plates = assigned.groupby(["source", "plate"]).agg(
+        assigned_pairs=("n_pairs", "sum"), with_mismatch=("with_mismatch", "sum")
+    )
+    # A barcode that matched both exactly and with mismatches has a row for
+    # each, so seen/listed are counted per distinct barcode.
+    per_barcode = assigned.groupby(["source", "plate", "barcode"])["n_pairs"].sum()
+    plates["barcodes"] = (
+        (per_barcode > 0).groupby(level=["source", "plate"]).sum().astype(int).astype(str)
+        + "/"
+        + per_barcode.groupby(level=["source", "plate"]).size().astype(str)
+    )
+    plates["frac_of_library"] = plates["assigned_pairs"] / plates.index.get_level_values(
+        "source"
+    ).map(totals["total_pairs"]).to_numpy()
+    plates["frac_with_mismatch"] = plates["with_mismatch"] / plates["assigned_pairs"].where(
+        plates["assigned_pairs"] > 0
+    )
+    plates = (
+        plates.reset_index()
+        .rename(columns={"source": "library"})[
+            [
+                "library",
+                "plate",
+                "assigned_pairs",
+                "frac_of_library",
+                "barcodes",
+                "frac_with_mismatch",
+            ]
+        ]
+    )
+    return libraries, plates

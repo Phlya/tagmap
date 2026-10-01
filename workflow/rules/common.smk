@@ -193,10 +193,52 @@ sanger_samples = read_sample_sheet(
     config.get("sanger_samples_path"), "../schemas/sanger_samples.schema.yaml"
 )
 
-sample_list = sorted(samples["name"].unique()) if samples.shape[0] else []
+# What each NGS library is, and whether it is split by in-read barcode first.
+# source_list is the libraries as listed in samples_path; sample_list is what
+# the rest of the workflow sees, which with barcodes is one sample per library
+# and plate, "{plate}_{name}" - sample_sources maps each back to its
+# (library, plate). Without barcodes the two are the same and the plate empty.
+clone_mode = config["ngs_mode"] == "clone"
+demultiplex = bool(config.get("barcodes_path"))
+source_list = sorted(samples["name"].unique()) if samples.shape[0] else []
+sample_sources = {name: (name, "") for name in source_list}
+barcodes = None
+if demultiplex:
+    if not source_list:
+        raise ValueError("barcodes_path needs NGS libraries in samples_path to split.")
+    barcodes = tagmaplib.read_barcodes(
+        config["barcodes_path"], config["barcode_max_mismatch"]
+    )
+    all_plates = list(dict.fromkeys(barcodes["plate"]))
+    sample_sources = {}
+    for source in source_list:
+        rows = samples[samples["name"] == source]
+        plates = all_plates
+        if "plates" in rows.columns and rows["plates"].notna().any():
+            wanted = {
+                plate.strip()
+                for cell in rows["plates"].dropna()
+                for plate in cell.split(",")
+                if plate.strip()
+            }
+            unknown = sorted(wanted - set(all_plates))
+            if unknown:
+                raise ValueError(
+                    f"Library {source!r} lists plates {unknown}, which are not "
+                    f"in {config['barcodes_path']}."
+                )
+            plates = [plate for plate in all_plates if plate in wanted]
+        for plate in plates:
+            sample_sources[f"{plate}_{source}"] = (source, plate)
+sample_list = sorted(sample_sources)
 sanger_sample_list = (
     sorted(sanger_samples["name"].unique()) if sanger_samples.shape[0] else []
 )
+if set(sample_list) & set(sanger_sample_list):
+    raise ValueError(
+        "NGS and Sanger sample names must be distinct, but both have: "
+        f"{sorted(set(sample_list) & set(sanger_sample_list))}"
+    )
 
 if not sample_list and not sanger_sample_list:
     raise ValueError(
@@ -344,11 +386,12 @@ def workflow_targets():
                 read=["R1", "R2"],
             )
         targets += expand(f"{pairs_folder}/{{sample}}_stats.yml", sample=sample_list)
-        targets += expand(
-            f"{coverage_folder}/{{sample}}_{{side}}_coverage_for_ucsc.bedgraph",
-            sample=sample_list,
-            side=["forward", "reverse"],
-        )
+        if not clone_mode:
+            targets += expand(
+                f"{coverage_folder}/{{sample}}_{{side}}_coverage_for_ucsc.bedgraph",
+                sample=sample_list,
+                side=["forward", "reverse"],
+            )
         targets += [
             f"{peaks_folder}/all_peaks.bed",
             f"{insertion_sites_folder}/all_sites.bed",
@@ -357,6 +400,10 @@ def workflow_targets():
             f"{insertion_sites_folder}/sample_summary.tsv",
             f"{stats_folder}/ngs_qc_stats.tsv",
         ]
+        if demultiplex:
+            targets.append(f"{stats_folder}/demux_stats.tsv")
+        if clone_mode:
+            targets.append(f"{stats_folder}/ngs_clone_summary.tsv")
     if sanger_sample_list:
         targets += expand(
             f"{sanger_folder}/{{sample}}_reads.tsv", sample=sanger_sample_list
@@ -404,3 +451,12 @@ def sanger_ngs_pairs():
             renamed_sample, _ = tagmaplib.rename_clone_id(sample, "")
             pairs.append(f"{renamed_sample}={ngs_sample}")
     return pairs
+
+
+def ngs_sample_map():
+    """sample=library:plate entries for ngs_clone_stats.py - which library and
+    plate (empty without barcodes) each NGS sample came from."""
+    return [
+        f"{sample}={source}:{plate}"
+        for sample, (source, plate) in sorted(sample_sources.items())
+    ]

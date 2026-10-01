@@ -8,3 +8,8 @@ benchmarks/**
 .snakemake
 .snakemake/**
 __pycache__/
+
+# Outputs of running the test workflow in place
+.test/results*/
+.test/logs/
+.test/benchmarks/
