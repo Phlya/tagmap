@@ -62,6 +62,16 @@ argparser.add_argument(
     help="Tolerance when checking that a read starts at the ITR primer",
 )
 argparser.add_argument(
+    "--max-deletion-size",
+    type=int,
+    default=2000,
+    help="A read's genomic segments after the one nearest the primer do not "
+    "fail it as an ambiguous multi-site read when each is colinear with the "
+    "one before it and the deletion between them is no larger than this "
+    "many bases - a deletion too large for a single CIGAR 'D', rather than "
+    "an unrelated second alignment",
+)
+argparser.add_argument(
     "--contig-edge-tolerance",
     type=int,
     default=50,
@@ -171,6 +181,16 @@ def parse_read_name(name, regex, direction_map):
     if match is None:
         return {}
     fields = {k: v for k, v in match.groupdict().items() if v is not None}
+    if "well" in fields:
+        # A well missing its leading zero ("E9" instead of "E09" - a one-off
+        # naming slip in the raw trace file, not a different well) would
+        # otherwise become a clone id of its own instead of merging with the
+        # rest of that well's reads, so normalise to the two-digit form the
+        # rest of a plate uses.
+        well_match = tagmaplib.WELL_RE.match(fields["well"])
+        if well_match:
+            row, col = well_match.groups()
+            fields["well"] = f"{row}{int(col):02d}"
     if "direction" in fields:
         raw = fields["direction"]
         fields["direction"] = direction_map.get(raw, direction_map.get(raw.upper(), raw))
@@ -210,6 +230,31 @@ def runs_off_contig_end(genomic, site, chrom_lengths, tolerance):
     if site["strand"] == "+":
         return contig_len - max(s["end"] for s in same_contig) <= tolerance
     return min(s["start"] for s in same_contig) <= tolerance
+
+
+def small_deletions_only(genomic, max_size):
+    """Whether segments after the first are just the read crossing a deletion.
+
+    `genomic` is sorted by read position (nearest the primer first), so a
+    real site plus a deletion too large for a single CIGAR 'D' shows up as
+    consecutive segments that stay on the same chromosome and strand, in the
+    same order in the reference as in the read, with a gap - the deletion's
+    size - no bigger than `max_size` between each pair - as opposed to a
+    jump to an unrelated locus, an overlap, or a segment running the other
+    way.
+    """
+    first = genomic[0]
+    for prev, cur in zip(genomic, genomic[1:]):
+        if cur["chrom"] != first["chrom"] or cur["strand"] != first["strand"]:
+            return False
+        deletion_size = (
+            cur["start"] - prev["end"]
+            if first["strand"] == "+"
+            else prev["start"] - cur["end"]
+        )
+        if not (0 <= deletion_size <= max_size):
+            return False
+    return True
 
 
 def analyse_read(segments, primer_positions, args, default_direction, chrom_lengths):
@@ -275,8 +320,10 @@ def analyse_read(segments, primer_positions, args, default_direction, chrom_leng
     unexplained = uncovered_before(mapped, site["read_start"])
 
     reasons = []
-    if len(genomic) > 1 and not runs_off_contig_end(
-        genomic, site, chrom_lengths, args.contig_edge_tolerance
+    if (
+        len(genomic) > 1
+        and not runs_off_contig_end(genomic, site, chrom_lengths, args.contig_edge_tolerance)
+        and not small_deletions_only(genomic, args.max_deletion_size)
     ):
         reasons.append("multiple genomic alignments")
     if unexplained > args.max_unexplained:

@@ -124,6 +124,9 @@ original_insertion_max_dist: 25
 # one end but the NGS library saw both.
 validate_sanger_with_ngs: True
 validation_max_dist: 500
+# NGS sites within this distance of a Sanger site must all agree on
+# orientation and sides, or the clone's ngs_verification reads "ambiguous".
+validation_ambiguity_dist: 50
 
 # Every individual output path below defaults to living under here, so this
 # is usually the only one of the lot worth setting.

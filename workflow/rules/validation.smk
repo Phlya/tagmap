@@ -8,6 +8,7 @@ rule compare_sanger_ngs:
         sanger=f"{sanger_folder}/all_sanger_sites.bed",
         ngs_sites=f"{insertion_sites_folder}/all_sites.bed",
         ngs_peaks=f"{peaks_folder}/all_peaks.bed",
+        original_site=original_site_file if has_original_site else [],
         script=f"{scripts_dir}/compare_sanger_ngs.py",
     output:
         table=f"{validation_folder}/sanger_vs_ngs.tsv",
@@ -21,6 +22,13 @@ rule compare_sanger_ngs:
     threads: 1
     params:
         max_dist=config["validation_max_dist"],
+        ambiguity_dist=config["validation_ambiguity_dist"],
+        original_site_arg=lambda wildcards, input: (
+            f"--original-site {input.original_site} "
+            f"--original-max-dist {config['original_insertion_max_dist']}"
+            if input.original_site
+            else ""
+        ),
         pairs_arg=lambda wildcards: (
             f"--sample-pairs {' '.join(sanger_ngs_pairs())}"
             if sanger_ngs_pairs()
@@ -30,7 +38,9 @@ rule compare_sanger_ngs:
         """
         python3 {input.script} --sanger {input.sanger} \
             --ngs-sites {input.ngs_sites} --ngs-peaks {input.ngs_peaks} \
-            --max-dist {params.max_dist} {params.pairs_arg} \
+            --max-dist {params.max_dist} \
+            --ambiguity-dist {params.ambiguity_dist} {params.original_site_arg} \
+            {params.pairs_arg} \
             -o {output.table} --output-confirmed {output.confirmed} \
             >{log[0]} 2>&1
         """

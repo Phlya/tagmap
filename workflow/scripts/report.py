@@ -16,11 +16,23 @@ SECTIONS = [
     (
         "ngs_qc",
         "NGS QC",
-        "Per library: read pairs anchored at an ITR primer (evidence of "
-        "mobilization), and how many of the resulting insertion sites were "
-        "seen from both sides of the cassette versus only one - a one-sided "
-        "site is weaker evidence, since it has not been confirmed by an "
-        "independent primer.",
+        "Per library, as two tables below since together they're too wide "
+        "for one: raw pre-deduplication pair counts, how many pairs have "
+        "the expected ITR/end geometry - raw_forward_itr_anchored_pairs/"
+        "raw_reverse_itr_anchored_pairs split that count by which ITR "
+        "primer's end the pair anchors to, and raw_forward_junction_pairs/"
+        "raw_reverse_junction_pairs the same split restricted to "
+        "junction-type pairs - and how many support retained peaks and "
+        "sites; then, after deduplication, mobilized_pairs (forward_"
+        "junction_pairs + reverse_junction_pairs) as a fraction of "
+        "total_deduplicated_junction_pairs - non-duplicate pairs whose "
+        "junction was actually sequenced, wherever it landed - rather than "
+        "of all sequenced pairs, most of which are PCR duplicates or "
+        "off-target and were never going to be informative either way; and "
+        "how many resulting insertion sites were seen from both sides of "
+        "the cassette versus only one - a one-sided site is weaker "
+        "evidence, since it has not been confirmed by an independent "
+        "primer.",
     ),
     (
         "sanger_qc",
@@ -30,7 +42,7 @@ SECTIONS = [
         "give the same breakdown by clone instead of by read - a clone with "
         "several reads on one side (a rerun, or a differently-primed retry "
         "on the same well) counts once, as soon as any of them passed - so "
-        "this is the number to read for \"how many clones did this side "
+        'this is the number to read for "how many clones did this side '
         "work for\", as distinct from n_pass's raw read count.",
     ),
     (
@@ -47,19 +59,26 @@ SECTIONS = [
         "supports which locus. orientation pulls the strand(s) already "
         "shown in position out into their own column - which way the "
         "insertion faces, one per site listed there, in the same order; "
-        "\".\" marks the rare site where forward and reverse reads land on "
+        '"." marks the rare site where forward and reverse reads land on '
         "the same locus but disagree on which way it faces. Passing QC on "
         "both sides isn't enough on its own: positions_agree checks that "
         "the forward and reverse reads actually cluster onto the same site "
         "rather than "
         "pointing at different loci, and both_sides_confirmed requires "
         "both. Where NGS data for the same material is available, "
-        "ngs_verification gives the combined Sanger+NGS call for that "
-        "clone's site - \"both\", \"forward only\", \"reverse only\", or "
-        "\"not verified\" - using NGS only to fill in a side Sanger's own "
-        "primers left unconfirmed, never to override a side Sanger already "
-        "confirmed (so a clone Sanger already confirmed from both primers "
-        "reads \"both\" regardless of what NGS shows); \"disagreeing "
+        "ngs_verification reports what NGS alone shows at that "
+        'clone\'s site, independent of which primers Sanger used - "both", '
+        '"forward only", "reverse only", "ambiguous", "no NGS site '
+        'nearby", or "not verified". "no NGS site nearby" means there was '
+        "no NGS site within the matching distance at all; \"not verified\" "
+        "means one was found but gave no usable side (e.g. its orientation "
+        'contradicts Sanger\'s); "ambiguous" means several NGS sites lie '
+        "close to the Sanger position (see validation_ambiguity_dist) and "
+        "disagree on orientation or on which sides they show, so the Sanger "
+        "read can't be tied to one of them. A clone confirmed from one "
+        "primer is colored as validated when NGS shows both sides, and "
+        "as failed when NGS shows only the opposite side; "
+        '"disagreeing '
         "(NGS consistent/inconsistent)\" if the clone's Sanger reads "
         "themselves disagree on locus - disagreement alone already fails "
         "the clone regardless of NGS, so this just reports, for "
@@ -69,8 +88,8 @@ SECTIONS = [
         "both sides there is the ordinary, expected result). Where the "
         "original, pre-mobilization insertion "
         "is configured, a clone whose both-sides-agreeing site sits there "
-        "instead of a new locus reads \"unmobilized\" in summary rather "
-        "than \"both sides confirmed\".",
+        'instead of a new locus reads "unmobilized" in summary rather '
+        'than "both sides confirmed".',
     ),
     (
         "sanger_positions",
@@ -100,7 +119,7 @@ SECTIONS = [
         "folded into a single count. Clones at the configured original "
         "insertion site - one-sided or both-sides-confirmed alike, so this "
         "row's n_times_found can run well ahead of the stricter \"both "
-        "primers confirm it\" count noted under the Sanger clones table "
+        'primers confirm it" count noted under the Sanger clones table '
         "above - are pulled out of the per-locus breakdown and tallied in "
         "their own combined row instead (otherwise they'd fragment across "
         "several near-identical founder-locus "
@@ -109,7 +128,7 @@ SECTIONS = [
         "donor construct) get their own combined row - n_one_sided is N/A "
         "for that row, since both primers there were confirmed, just on "
         "different sites, the opposite situation. Where NGS data is "
-        "available, ngs_verification gives the same combined Sanger+NGS "
+        "available, ngs_verification gives the same NGS-only "
         "call as the clone summary's own column, pooled across every clone "
         "sharing that row instead of one clone at a time; N/A for the "
         "disagreeing row and the two totals below. The last two rows are "
@@ -348,6 +367,21 @@ if __name__ == "__main__":
         lines.append("")
         if df.shape[0] == 0:
             lines.append("_No data._")
+        elif attr == "ngs_qc":
+            # Raw and deduplicated/sidedness columns together are too wide
+            # for one readable table - see tagmaplib.NGS_QC_RAW_COLUMNS.
+            dedup_columns = (
+                ["sample_name"]
+                + tagmaplib.NGS_QC_DEDUPLICATED_COLUMNS
+                + tagmaplib.NGS_QC_SIDEDNESS_COLUMNS[1:]
+            )
+            lines.append("### Raw (pre-deduplication) pairs")
+            lines.append("")
+            lines.append(tagmaplib.to_markdown(df[tagmaplib.NGS_QC_RAW_COLUMNS]))
+            lines.append("")
+            lines.append("### Deduplicated pairs and site sidedness")
+            lines.append("")
+            lines.append(tagmaplib.to_markdown(df[dedup_columns]))
         else:
             lines.append(tagmaplib.to_markdown(df))
         lines.append("")
@@ -359,9 +393,9 @@ if __name__ == "__main__":
                 "(both primers independently confirm the original insertion "
                 "site). A clone confirmed from only one primer there doesn't "
                 "count here even though that locus is still its best "
-                "evidence - see the \"unmobilized: at the original insertion "
-                "site\" row of the Sanger position counts table below for "
-                "those too. A small \"u\" in the plate grid below marks a "
+                'evidence - see the "unmobilized: at the original insertion '
+                'site" row of the Sanger position counts table below for '
+                'those too. A small "u" in the plate grid below marks a '
                 "clone that landed there."
                 + (
                     " A well drawn with a bold ring is validated (green) and "
@@ -401,7 +435,7 @@ if __name__ == "__main__":
                     "sequence); red - failed (a trace was run, but came back "
                     f"under {tagmaplib.READ_QC_MIN_CLEAN_BASES} clean bases); "
                     "grey - not sequenced (no trace file for this well/side "
-                    "at all). A small \"u\" marks a well whose passing "
+                    'at all). A small "u" marks a well whose passing '
                     "read(s) on that side land at the configured original "
                     "insertion site."
                 )

@@ -102,6 +102,7 @@ rule sanger_sites:
         min_aligned=config["sanger_min_aligned"],
         max_unexplained=config["sanger_max_unexplained"],
         max_dist=config["sanger_max_dist"],
+        max_deletion_size=config["sanger_max_deletion_size"],
         name_regex_arg=lambda wildcards: (
             f"--name-regex '{config['sanger_name_regex']}'"
             if config["sanger_name_regex"]
@@ -130,6 +131,7 @@ rule sanger_sites:
             --min-mapq {params.min_mapq} --min-aligned {params.min_aligned} \
             --max-unexplained {params.max_unexplained} \
             --max-dist {params.max_dist} \
+            --max-deletion-size {params.max_deletion_size} \
             --direction {params.direction} \
             --direction-map {params.direction_map} \
             {params.name_regex_arg} {params.clone_arg} \
@@ -186,6 +188,7 @@ rule filter_confirmed_sites:
         no_cassette=f"{sanger_folder}/confirmed_sanger_sites_no_cassette.bed",
         region=f"{sanger_folder}/confirmed_sanger_sites_region.bed",
         deduplicated=f"{sanger_folder}/confirmed_sanger_sites_deduplicated.bed",
+        deduplicated_for_ucsc=f"{sanger_folder}/confirmed_sanger_sites_deduplicated_for_ucsc.bed",
         region_deduplicated=f"{sanger_folder}/confirmed_sanger_sites_region_deduplicated.bed",
     log:
         "logs/filter_confirmed_sites/log.log",
@@ -214,6 +217,7 @@ rule filter_confirmed_sites:
             --output-no-cassette {output.no_cassette} \
             --output-region {output.region} \
             --output-deduplicated {output.deduplicated} \
+            --output-deduplicated-for-ucsc {output.deduplicated_for_ucsc} \
             --output-region-deduplicated {output.region_deduplicated} \
             >{log[0]} 2>&1
         """

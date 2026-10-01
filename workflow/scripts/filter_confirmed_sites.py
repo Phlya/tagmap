@@ -16,7 +16,9 @@ validated clones near a specific locus of interest. And, for both the full
 set and the region-restricted one, a deduplicated copy collapsing every
 clone at one site down to a single row, so a hotspot several clones landed
 on independently shows up once rather than as several stacked,
-identical-looking features.
+identical-looking features. The deduplicated set also gets its own
+--output-for-ucsc counterpart, filtered and track-lined the same way as
+--output-for-ucsc itself.
 
 Before any of that, a confirmed clone's own Sanger coordinate is replaced
 with the matching NGS site's coordinate where --sanger-vs-ngs says one
@@ -81,6 +83,12 @@ argparser.add_argument(
     "--output-deduplicated",
     required=True,
     help="--output, collapsed to one row per distinct site - see deduplicate_by_position.",
+)
+argparser.add_argument(
+    "--output-deduplicated-for-ucsc",
+    required=True,
+    help="--output-deduplicated, filtered via --chromsizes and given a track "
+    "header the same way --output-for-ucsc is.",
 )
 argparser.add_argument(
     "--output-region-deduplicated",
@@ -155,6 +163,19 @@ def deduplicate_by_position(df):
     return deduped.sort_values(["chrom", "start", "end"])
 
 
+def drop_cassette(df):
+    """`df` restricted to --chromsizes' contigs, i.e. with the
+    construct/landing-pad ones a genome browser doesn't know about dropped -
+    unfiltered if --chromsizes wasn't given.
+    """
+    if args.chromsizes is None:
+        return df
+    chromsizes = bioframe.read_chromsizes(args.chromsizes)
+    df = bioframe.trim(df, chromsizes).dropna()
+    df[["start", "end"]] = df[["start", "end"]].astype(int)
+    return df
+
+
 sites = pd.read_csv(args.sites, sep="\t", dtype={"chrom": str})
 clones = pd.read_csv(args.clone_summary, sep="\t")
 
@@ -165,6 +186,7 @@ if sites.shape[0] == 0 or clones.shape[0] == 0:
     write_empty(args.output_no_cassette)
     write_empty(args.output_region)
     write_empty(args.output_deduplicated)
+    write_empty(args.output_deduplicated_for_ucsc)
     write_empty(args.output_region_deduplicated)
     raise SystemExit(0)
 
@@ -189,11 +211,7 @@ confirmed["name"] = confirmed["sample_name"] + "_" + confirmed["clone"]
 confirmed = confirmed.sort_values(["sample_name", "clone", "chrom", "start"])
 tagmaplib.write_bed(confirmed, args.output, columns=BED_COLUMNS)
 
-no_cassette = confirmed[BED_COLUMNS].sort_values(["chrom", "start", "end"])
-if args.chromsizes is not None:
-    chromsizes = bioframe.read_chromsizes(args.chromsizes)
-    no_cassette = bioframe.trim(no_cassette, chromsizes).dropna()
-    no_cassette[["start", "end"]] = no_cassette[["start", "end"]].astype(int)
+no_cassette = drop_cassette(confirmed[BED_COLUMNS].sort_values(["chrom", "start", "end"]))
 tagmaplib.write_bed(no_cassette, args.output_no_cassette, columns=BED_COLUMNS)
 
 track_name = (
@@ -208,8 +226,13 @@ tagmaplib.write_bed(
 in_region = bioframe.select(confirmed, args.region) if args.region else confirmed
 tagmaplib.write_bed(in_region, args.output_region, columns=BED_COLUMNS)
 
+deduplicated = deduplicate_by_position(confirmed)
+tagmaplib.write_bed(deduplicated, args.output_deduplicated, columns=BED_COLUMNS)
 tagmaplib.write_bed(
-    deduplicate_by_position(confirmed), args.output_deduplicated, columns=BED_COLUMNS
+    drop_cassette(deduplicated[BED_COLUMNS]),
+    args.output_deduplicated_for_ucsc,
+    track_name=track_name,
+    color_by_strand=True,
 )
 tagmaplib.write_bed(
     deduplicate_by_position(in_region),

@@ -10,6 +10,7 @@ start/end), for pinpointing a confirmed Sanger site onto it later.
 """
 
 import argparse
+import json
 
 import bioframe
 import numpy as np
@@ -22,6 +23,22 @@ argparser.add_argument("--sanger", required=True, help="all_sanger_sites.bed")
 argparser.add_argument("--ngs-sites", required=True, help="all_sites.bed")
 argparser.add_argument("--ngs-peaks", required=True, help="all_peaks.bed")
 argparser.add_argument("--max-dist", type=int, default=500)
+argparser.add_argument(
+    "--ambiguity-dist",
+    type=int,
+    default=50,
+    help="When several NGS sites lie within this distance of a Sanger site and "
+    "they disagree on orientation or on which sides they show, the Sanger site "
+    "cannot be tied to one of them, and its ngs_verification is 'ambiguous'.",
+)
+argparser.add_argument(
+    "--original-site",
+    default=None,
+    help="original_site.json, if configured. Sanger sites there are never "
+    "called ambiguous: the original locus sits in a repeat that NGS resolves "
+    "into several mutually inconsistent sites, and is not a new integration.",
+)
+argparser.add_argument("--original-max-dist", type=int, default=0)
 argparser.add_argument(
     "--sample-pairs",
     nargs="*",
@@ -76,6 +93,43 @@ def nearest(sanger, ngs, prefix, extra_columns, max_dist):
     return out
 
 
+def neighbourhood(sanger, ngs, ambiguity_dist):
+    """How many NGS sites lie near each Sanger site, and whether they disagree.
+
+    The nearest NGS site is not necessarily the one a Sanger read belongs to:
+    a few bp of mapping noise can make it land closer to a neighbouring site
+    with a different orientation or side pattern. So every NGS site within
+    ambiguity_dist is compared, and the Sanger site is ambiguous if they do
+    not all share one (strand, sides) signature.
+    """
+    n_nearby = np.zeros(sanger.shape[0], dtype=int)
+    ambiguous = np.zeros(sanger.shape[0], dtype=bool)
+    if sanger.shape[0] == 0 or ngs.shape[0] == 0:
+        return pd.DataFrame(
+            {"ngs_n_sites_nearby": n_nearby, "ngs_ambiguous": ambiguous},
+            index=sanger.index,
+        )
+    ngs_by_chrom = {chrom: group for chrom, group in ngs.groupby("chrom")}
+    for i, row in enumerate(sanger.itertuples()):
+        candidates = ngs_by_chrom.get(row.chrom)
+        if candidates is None:
+            continue
+        gap = np.maximum(
+            np.maximum(candidates["start"].to_numpy() - row.end, row.start - candidates["end"].to_numpy()),
+            0,
+        )
+        nearby = candidates[gap <= ambiguity_dist]
+        n_nearby[i] = nearby.shape[0]
+        # all_sites.bed from before site_sides existed has no sides column.
+        sides = nearby["sides"] if "sides" in nearby.columns else [None] * len(nearby)
+        signatures = set(zip(nearby["strand"], sides))
+        ambiguous[i] = len(signatures) > 1
+    return pd.DataFrame(
+        {"ngs_n_sites_nearby": n_nearby, "ngs_ambiguous": ambiguous},
+        index=sanger.index,
+    )
+
+
 if __name__ == "__main__":
     args = argparser.parse_args()
 
@@ -127,6 +181,7 @@ if __name__ == "__main__":
                 group,
                 nearest(group, sites_subset, "ngs_site", site_columns, args.max_dist),
                 nearest(group, peaks_subset, "ngs_peak", peak_columns, args.max_dist),
+                neighbourhood(group, sites_subset, args.ambiguity_dist),
             ],
             axis=1,
         )
@@ -145,23 +200,41 @@ if __name__ == "__main__":
     # cassette, so a stranded NGS site is a two-sided one.
     sanger["ngs_two_sided"] = np.where(matched, strand_known, pd.NA)
     sanger["confirmed_by_ngs"] = matched & (sanger["ngs_strand_agrees"] != False)
+    # Only a matched site can be ambiguous: with nothing within max_dist there
+    # is no verification to cast doubt on (that is "no NGS site nearby").
+    sanger["ngs_ambiguous"] = sanger["ngs_ambiguous"].astype(bool) & matched
+    if args.original_site is not None:
+        with open(args.original_site) as f:
+            original_site = json.load(f)
+        at_original_site = (sanger["chrom"] == original_site["chrom"]) & (
+            (sanger["start"] - original_site["pos"]).abs() <= args.original_max_dist
+        )
+        sanger["ngs_ambiguous"] &= ~at_original_site
 
     def row_ngs_verification(row):
-        sanger_sides = []
-        if row.n_forward > 0:
-            sanger_sides.append("forward")
-        if row.n_reverse > 0:
-            sanger_sides.append("reverse")
-        ngs_sides = (
+        ngs_sides = set(
             tagmaplib.NGS_SIDE_SETS.get(row.ngs_site_sides, [])
             if row.confirmed_by_ngs
             else []
         )
-        return tagmaplib.ngs_verification_label(sanger_sides, ngs_sides)
+        # Lacking a called site, a single NGS peak sitting at the exact same
+        # base (not just "nearby") is still real, independent evidence - see
+        # ngs_verification_label - just from a molecule that never cleared
+        # (or was never orientation-resolved into) a full site call.
+        exact_peak = pd.notna(row.ngs_peak_dist) and row.ngs_peak_dist == 0
+        if exact_peak:
+            direction = tagmaplib.PEAK_SIDE_DIRECTIONS.get(row.ngs_peak_side)
+            if direction:
+                ngs_sides.add(direction)
+        return tagmaplib.ngs_verification_label(
+            ngs_sides,
+            ngs_checked=pd.notna(row.ngs_site_dist) or exact_peak,
+            ambiguous=bool(row.ngs_ambiguous),
+        )
 
-    # Sanger's own forward/reverse primers already say which side(s) it
-    # confirms at this site; NGS is only consulted to fill in a side Sanger
-    # left unconfirmed (see tagmaplib.ngs_verification_label).
+    # What NGS alone says here (see tagmaplib.ngs_verification_label); which
+    # primer(s) Sanger confirmed is in n_forward/n_reverse. "ambiguous" when
+    # the NGS sites around the position disagree with each other.
     sanger["ngs_verification"] = [
         row_ngs_verification(row) for row in sanger.itertuples()
     ]

@@ -31,6 +31,46 @@ SITE_COLUMNS = ["chrom", "start", "end", "sample_name", "score", "strand"]
 # Columns of the bedgraph files written by coverage.py.
 COVERAGE_COLUMNS = ["chrom", "start", "end", "count", "fraction", "orientation"]
 
+# Column groups of ngs_qc_stats.tsv (written by ngs_stats.py) - split out
+# here, rather than left as one flat column list, so report.py/report_pdf.py
+# can render the raw pre-deduplication counts and the deduplicated/sidedness
+# counts as two separate tables: together they're too wide for one table's
+# columns to stay readable even on a landscape page.
+NGS_QC_RAW_COLUMNS = [
+    "sample_name",
+    "total_pairs",
+    "mapped_pairs",
+    "frac_mapped",
+    "raw_unusable_pairs",
+    "raw_itr_anchored_pairs",
+    "raw_forward_itr_anchored_pairs",
+    "raw_reverse_itr_anchored_pairs",
+    "raw_junction_pairs",
+    "raw_forward_junction_pairs",
+    "raw_reverse_junction_pairs",
+    "raw_non_junction_pairs",
+    "raw_peak_support_pairs",
+    "raw_site_support_pairs",
+]
+
+NGS_QC_DEDUPLICATED_COLUMNS = [
+    "forward_junction_pairs",
+    "reverse_junction_pairs",
+    "mobilized_pairs",
+    "total_deduplicated_junction_pairs",
+    "frac_mobilized",
+]
+
+NGS_QC_SIDEDNESS_COLUMNS = [
+    "sample_name",
+    "n_sites",
+    "n_two_sided",
+    "frac_two_sided",
+    "n_one_sided",
+    "n_forward_only",
+    "n_reverse_only",
+]
+
 
 # Walk types of pairtools parse2 in which the cassette/genome junction was
 # actually sequenced, because both sides of the pair come from within one read
@@ -106,6 +146,18 @@ def flip_strand(strand):
     """Swap + and -, leaving anything else (e.g. '.') alone."""
     strand = pd.Series(strand, dtype=object)
     return strand.map({"+": "-", "-": "+"}).fillna(strand)
+
+
+def sample_and_side(path, suffix):
+    """Pull {sample}/{side} back out of a "{sample}_{side}{suffix}" filename -
+    the naming convention find_peaks_junctions.py's per-side outputs and
+    coverage.py's bedgraphs both use.
+    """
+    import os
+
+    base = os.path.basename(path)[: -len(suffix)]
+    sample, side = base.rsplit("_", 1)
+    return sample, side
 
 
 def read_peaks(path, columns=None):
@@ -210,27 +262,58 @@ NGS_SIDE_SETS = {
     "reverse_only": {"reverse"},
 }
 
+# all_peaks.bed's own "side" column (see combine_peaks.py) encodes which ITR
+# primer a peak is anchored at as "+"/"-", the same symbols - but not the same
+# meaning - as a site's genomic strand. Shared so compare_sanger_ngs.py and
+# sanger_stats.py's exact-peak-match fallback (see ngs_verification_label)
+# read it the same way.
+PEAK_SIDE_DIRECTIONS = {"+": "forward", "-": "reverse"}
 
-def ngs_verification_label(sanger_sides, ngs_sides):
-    """Combine which primer(s) Sanger confirms at a locus with which side(s)
-    NGS independently confirms there, into one "both" / "forward only" /
-    "reverse only" / "not verified" label.
 
-    NGS only fills in a side Sanger's own primers left unconfirmed - it
-    can't override a side Sanger already confirmed, since for that side
-    both calls already agree ("confirmed") regardless. sanger_sides and
-    ngs_sides are both iterables of "forward"/"reverse" (or empty) - see
-    compare_sanger_ngs.py (per Sanger site) and sanger_stats.py's
-    position_counts (pooled across every clone sharing a locus).
+# Which sides each ngs_verification_label result stands for; the labels that
+# say nothing about sides are simply absent.
+NGS_LABEL_SIDES = {
+    "both": {"forward", "reverse"},
+    "forward only": {"forward"},
+    "reverse only": {"reverse"},
+}
+
+
+def ngs_verification_label(ngs_sides, ngs_checked=True, ambiguous=False):
+    """What NGS alone says about a Sanger site: "both" / "forward only" /
+    "reverse only" / "ambiguous" / "no NGS site nearby" / "not verified".
+
+    Deliberately says nothing about which primer(s) Sanger itself confirmed -
+    that is already in the Sanger columns (n_forward/n_reverse,
+    forward_status/reverse_status). ngs_sides is an iterable of
+    "forward"/"reverse" (or empty) - see compare_sanger_ngs.py (per Sanger
+    site) and sanger_stats.py's position_counts (pooled across every clone
+    sharing a locus). It covers two tiers the caller has already merged: a
+    side from a fully called, orientation-resolved NGS *site* nearby, or -
+    lacking that - a side from a single NGS *peak* landing at the exact same
+    base (see PEAK_SIDE_DIRECTIONS), weaker evidence than a called site but
+    still an exact positional match rather than "somewhere nearby".
+
+    ngs_checked distinguishes "NGS was matched to a site or exact-position
+    peak here but gave no usable side (e.g. its strand contradicts Sanger's,
+    so "not verified")" from "there was nothing from NGS within the matching
+    distance at all" ("no NGS site nearby").
+
+    ambiguous says the NGS sites around the Sanger position disagree with
+    each other (orientation or which sides they show - see
+    compare_sanger_ngs.py), so which of them the Sanger read really belongs
+    to is unknown and none of their sides can be attributed to it.
     """
-    sides = set(sanger_sides) | set(ngs_sides)
-    if sides >= {"forward", "reverse"}:
+    if ambiguous:
+        return "ambiguous"
+    ngs_sides = set(ngs_sides)
+    if ngs_sides >= NGS_LABEL_SIDES["both"]:
         return "both"
-    if sides == {"forward"}:
+    if ngs_sides == {"forward"}:
         return "forward only"
-    if sides == {"reverse"}:
+    if ngs_sides == {"reverse"}:
         return "reverse only"
-    return "not verified"
+    return "not verified" if ngs_checked else "no NGS site nearby"
 
 
 # UCSC's colorByStrand track attribute: '+' strand features render red,
@@ -288,16 +371,19 @@ def clone_color(
     """Which of CLONE_GREEN/YELLOW/RED a clone's status maps to.
 
     - green: both sides confirmed and agree on position; or only one side
-      passed and NGS independently confirms both sides at that locus (see
+      passed and NGS shows both sides at that locus (see
       ngs_verification_label) - regardless of whether the other primer was
       never sequenced or sequenced and failed, since neither case is
       positive confirmation of the missing side on its own.
     - yellow: only one side passed, and NGS did not confirm both sides
-      there (no NGS data, nothing found, or NGS itself only one-sided).
+      there (no NGS data, nothing found, ambiguous, or NGS itself only
+      one-sided on the same side Sanger saw).
     - red: neither side passed, or both passed individually but disagree on
       position - positive evidence of a conflict, which NGS cannot rescue
       (see ngs_verification_label's "disagreeing" clones - checking NGS
-      there is informational only, not a path back to green).
+      there is informational only, not a path back to green); or only one
+      side passed and NGS shows only the opposite side there, so the side
+      Sanger saw is absent from NGS at its own site - also a conflict.
     """
     if both_sides_confirmed:
         return CLONE_GREEN
@@ -306,7 +392,11 @@ def clone_color(
     if forward_pass and reverse_pass:
         return CLONE_RED  # both passed, but both_sides_confirmed is False: positions disagree
     if forward_pass or reverse_pass:
-        return CLONE_GREEN if ngs_verification == "both" else CLONE_YELLOW
+        passed_side = "forward" if forward_pass else "reverse"
+        ngs_sides = NGS_LABEL_SIDES.get(ngs_verification, set())
+        if ngs_sides and passed_side not in ngs_sides:
+            return CLONE_RED  # NGS sees only the side Sanger did not
+        return CLONE_GREEN if ngs_sides >= NGS_LABEL_SIDES["both"] else CLONE_YELLOW
     return CLONE_RED
 
 
@@ -382,24 +472,26 @@ def parse_well(clone):
     return ord(row.upper()) - ord("A"), int(col) - 1
 
 
-CLONE_ID_RE = re.compile(r"^plate(\d+)_(.+)$")
+CLONE_ID_RE = re.compile(r"^(?:(batch2)_)?plate(\d+)_(.+)$")
 
 
 def rename_clone_id(sample_name, clone):
-    """"plateN_POOL" sample name and its raw well/clone id, in this lab's own
-    shorthand - "POOLplN" for the sample, and the plate number folded onto
-    the front of the well/clone id (e.g. "plate1_R"/"A02" -> "Rpl1"/"1A02")
-    so a clone id alone still says which plate it came from once the sample
-    name is dropped (e.g. in a dedup list's "(+N others)" name, or a well
-    grid's own label). Left untouched if sample_name isn't in the
-    "plateN_POOL" form this project's sample sheets use - e.g. NGS sample
-    names, which never are.
+    """"plateN_POOL" (or "batch2_plateN_POOL") sample name and its raw
+    well/clone id, in this lab's own shorthand - "POOLplN" (or "b2POOLplN"
+    for batch 2) for the sample, and the plate number folded onto the front
+    of the well/clone id (e.g. "plate1_R"/"A02" -> "Rpl1"/"1A02",
+    "batch2_plate1_R"/"A02" -> "b2Rpl1"/"1A02") so a clone id alone still
+    says which plate it came from once the sample name is dropped (e.g. in a
+    dedup list's "(+N others)" name, or a well grid's own label). Left
+    untouched if sample_name isn't in either form this project's sample
+    sheets use - e.g. NGS sample names, which never are.
     """
     match = CLONE_ID_RE.match(str(sample_name))
     if match is None:
         return sample_name, clone
-    plate_num, pool = match.groups()
-    return f"{pool}pl{plate_num}", f"{plate_num}{clone}"
+    batch, plate_num, pool = match.groups()
+    prefix = "b2" if batch else ""
+    return f"{prefix}{pool}pl{plate_num}", f"{plate_num}{clone}"
 
 
 def plate_layout(positions):

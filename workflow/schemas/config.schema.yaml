@@ -232,6 +232,24 @@ properties:
       fall back to "."); 0 disables the check and trusts every peak's own
       orientation, however thin.
 
+  min_orientation_support_confirmed:
+    type: integer
+    default: 1
+    description: >
+      Like min_orientation_support, but only counting peaks that are
+      themselves junction-tier (find_peaks_junctions.py's own evidence
+      files - only the junction_tiered peak caller writes these). A
+      junction-tier peak already cleared its own evidence bar on the way in
+      - a directly sequenced junction, plus a TA-motif check for one only
+      thinly supported (motif_max_support) - so trusting its stated
+      orientation on far less pooled support than an ordinary peak is a
+      deliberate, calibrated choice, not a lowered bar across the board:
+      an orientation is trusted once it clears *either* this threshold on
+      junction-tier support alone, or min_orientation_support on every peak
+      pooled together. 0 disables this, falling back to
+      min_orientation_support for every peak regardless of tier. Has no
+      effect for a peak caller other than junction_tiered.
+
   # ------------------------------------------------------- Sanger analysis --
   sanger_basecaller:
     type: string
@@ -258,6 +276,17 @@ properties:
     description: >
       A read fails QC if more than this many bases before the genomic segment
       are neither aligned to the genome nor to the cassette.
+  sanger_max_deletion_size:
+    type: integer
+    default: 2000
+    description: >
+      A read's genomic segments after the one nearest the primer do not fail
+      it as an ambiguous multi-site read when each is colinear with the one
+      before it - same chromosome, same strand - and separated from it by a
+      deletion no larger than this. bwa reports a deletion too large for a
+      single CIGAR 'D' as a separate supplementary alignment instead, which
+      this is meant to tell apart from a genuinely unrelated second
+      alignment.
   sanger_name_regex:
     type: ["string", "null"]
     default: null
@@ -329,6 +358,17 @@ properties:
     type: integer
     default: 500
     description: Distance within which a Sanger and an NGS site are the same site.
+  validation_ambiguity_dist:
+    type: integer
+    default: 50
+    description: >
+      A Sanger read can land a few bp closer to a neighbouring NGS site than
+      to the one it really belongs to. If several NGS sites lie within this
+      distance of a Sanger site and they do not all show the same orientation
+      and the same sides (forward/reverse), the Sanger site cannot be tied to
+      one of them and its ngs_verification is "ambiguous" - NGS is then not
+      used to complete a side Sanger left unconfirmed. Set to 0 to only
+      consider NGS sites overlapping the Sanger site.
 
   # --------------------------------------------------------------- outputs --
   results_folder:

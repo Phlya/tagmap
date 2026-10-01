@@ -123,6 +123,35 @@ def cassette_length():
     return chromsizes.loc[config["cassette_name"]]["size"]
 
 
+def construct_contigs():
+    """Every contig that is founder/construct sequence rather than real
+    genome - the cassette payload (cassette_name) plus anything else (e.g. a
+    landing-pad contig) that only exists because chrom_sizes_path_no_cassette
+    trims it out for genome-browser-facing outputs. Derived as that set
+    difference rather than a config value of its own, so a project's
+    landing-pad contig only has to be named once (in the reference genome and
+    chrom_sizes_path_no_cassette), not duplicated into a second config key
+    that could drift out of sync with it - see sample_summary.py's
+    mobilization_efficiency, which needs the full set (unlike most
+    --construct-contigs uses elsewhere, which mean specifically the payload
+    a read can be sequenced from, not the founder locus - see e.g.
+    sanger_sites.py's is_construct, where a landing-pad read is a legitimate
+    site to call, just one that's classified unmobilized afterwards).
+    Falls back to just cassette_name if chrom_sizes_path_no_cassette isn't
+    configured, since there is then nothing to diff it against.
+    """
+    no_cassette_path = config.get("chrom_sizes_path_no_cassette")
+    if not no_cassette_path:
+        return [config["cassette_name"]]
+    full = pd.read_table(
+        config["chrom_sizes_path"], header=None, sep="\t", names=["chrom", "size"]
+    )["chrom"]
+    no_cassette = pd.read_table(
+        no_cassette_path, header=None, sep="\t", names=["chrom", "size"]
+    )["chrom"]
+    return sorted(set(full) - set(no_cassette))
+
+
 # Depending on the mapper, the index files will be different
 if config["mapper"] == "bwa-mem":
     idx = multiext(refgen_path, ".amb", ".ann", ".bwt", ".pac", ".sa")
@@ -343,6 +372,7 @@ def workflow_targets():
             f"{stats_folder}/sanger_clone_summary.tsv",
             f"{stats_folder}/sanger_positions.tsv",
             f"{stats_folder}/sanger_position_counts.tsv",
+            f"{stats_folder}/sanger_read_qc.tsv",
         ]
     if do_validation:
         targets += [
