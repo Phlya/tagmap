@@ -52,8 +52,12 @@ for _key, _subpath in {
 # project may skip them entirely and give sanger_forward_primer_sequence/
 # sanger_reverse_primer_sequence instead (checked once sample_list/
 # sanger_sample_list are known, further down).
-config.setdefault("sanger_forward_primer_sequence", config.get("forward_primer_sequence"))
-config.setdefault("sanger_reverse_primer_sequence", config.get("reverse_primer_sequence"))
+config.setdefault(
+    "sanger_forward_primer_sequence", config.get("forward_primer_sequence")
+)
+config.setdefault(
+    "sanger_reverse_primer_sequence", config.get("reverse_primer_sequence")
+)
 
 
 # Anchored to the workflow rather than the working directory, so that the
@@ -237,7 +241,7 @@ sanger_sample_list = (
 if set(sample_list) & set(sanger_sample_list):
     raise ValueError(
         "NGS and Sanger sample names must be distinct, but both have: "
-        f"{sorted(set(sample_list) & set(sanger_sample_list))}"
+        f"{sorted(set(sample_list)& set(sanger_sample_list))}"
     )
 
 if not sample_list and not sanger_sample_list:
@@ -459,4 +463,12 @@ def ngs_sample_map():
     return [
         f"{sample}={source}:{plate}"
         for sample, (source, plate) in sorted(sample_sources.items())
+    ]
+
+
+def library_fastqs(wildcards):
+    """The fastq files of one library as listed in samples_path - R1 or R2
+    according to the read wildcard (the sheet's columns are fastq1/fastq2)."""
+    return samples.loc[
+        samples["name"] == wildcards.source, f"fastq{wildcards.read[-1]}"
     ]

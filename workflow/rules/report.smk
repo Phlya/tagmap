@@ -10,19 +10,23 @@ rule report:
         demux=f"{stats_folder}/demux_stats.tsv" if demultiplex else [],
         ngs_clones=f"{stats_folder}/ngs_clone_summary.tsv" if clone_mode else [],
         sanger_qc=f"{stats_folder}/sanger_qc_stats.tsv" if sanger_sample_list else [],
-        sanger_clones=f"{stats_folder}/sanger_clone_summary.tsv"
-        if sanger_sample_list
-        else [],
-        sanger_positions=f"{stats_folder}/sanger_positions.tsv"
-        if sanger_sample_list
-        else [],
-        sanger_position_counts=f"{stats_folder}/sanger_position_counts.tsv"
-        if sanger_sample_list
-        else [],
-        sanger_read_qc=f"{stats_folder}/sanger_read_qc.tsv" if sanger_sample_list else [],
-        deduplicated=f"{sanger_folder}/confirmed_sanger_sites_region_deduplicated.bed"
-        if sanger_sample_list
-        else [],
+        sanger_clones=(
+            f"{stats_folder}/sanger_clone_summary.tsv" if sanger_sample_list else []
+        ),
+        sanger_positions=(
+            f"{stats_folder}/sanger_positions.tsv" if sanger_sample_list else []
+        ),
+        sanger_position_counts=(
+            f"{stats_folder}/sanger_position_counts.tsv" if sanger_sample_list else []
+        ),
+        sanger_read_qc=(
+            f"{stats_folder}/sanger_read_qc.tsv" if sanger_sample_list else []
+        ),
+        deduplicated=(
+            f"{sanger_folder}/confirmed_sanger_sites_region_deduplicated.bed"
+            if sanger_sample_list
+            else []
+        ),
         validation=f"{stats_folder}/validation_summary.tsv" if do_validation else [],
     output:
         f"{stats_folder}/report.md",
@@ -87,19 +91,23 @@ rule report_pdf:
         demux=f"{stats_folder}/demux_stats.tsv" if demultiplex else [],
         ngs_clones=f"{stats_folder}/ngs_clone_summary.tsv" if clone_mode else [],
         sanger_qc=f"{stats_folder}/sanger_qc_stats.tsv" if sanger_sample_list else [],
-        sanger_clones=f"{stats_folder}/sanger_clone_summary.tsv"
-        if sanger_sample_list
-        else [],
-        sanger_positions=f"{stats_folder}/sanger_positions.tsv"
-        if sanger_sample_list
-        else [],
-        sanger_position_counts=f"{stats_folder}/sanger_position_counts.tsv"
-        if sanger_sample_list
-        else [],
-        sanger_read_qc=f"{stats_folder}/sanger_read_qc.tsv" if sanger_sample_list else [],
-        deduplicated=f"{sanger_folder}/confirmed_sanger_sites_region_deduplicated.bed"
-        if sanger_sample_list
-        else [],
+        sanger_clones=(
+            f"{stats_folder}/sanger_clone_summary.tsv" if sanger_sample_list else []
+        ),
+        sanger_positions=(
+            f"{stats_folder}/sanger_positions.tsv" if sanger_sample_list else []
+        ),
+        sanger_position_counts=(
+            f"{stats_folder}/sanger_position_counts.tsv" if sanger_sample_list else []
+        ),
+        sanger_read_qc=(
+            f"{stats_folder}/sanger_read_qc.tsv" if sanger_sample_list else []
+        ),
+        deduplicated=(
+            f"{sanger_folder}/confirmed_sanger_sites_region_deduplicated.bed"
+            if sanger_sample_list
+            else []
+        ),
         validation=f"{stats_folder}/validation_summary.tsv" if do_validation else [],
     output:
         f"{stats_folder}/report.pdf",

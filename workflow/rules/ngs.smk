@@ -3,14 +3,6 @@ localrules:
     combine_all_peaks,
 
 
-def library_fastqs(wildcards):
-    """The fastq files of one library as listed in samples_path - R1 or R2
-    according to the read wildcard (the sheet's columns are fastq1/fastq2)."""
-    return samples.loc[
-        samples["name"] == wildcards.source, f"fastq{wildcards.read[-1]}"
-    ]
-
-
 if demultiplex:
 
     # Each library is merged first and then split by in-read barcode into one
@@ -41,8 +33,18 @@ if demultiplex:
             # the split too.
             lib=f"{scripts_dir}/tagmaplib.py",
         output:
-            r1=temp([f"{fastq_folder}/{plate}_{{source}}.R1.fastq.gz" for plate in all_plates]),
-            r2=temp([f"{fastq_folder}/{plate}_{{source}}.R2.fastq.gz" for plate in all_plates]),
+            r1=temp(
+                [
+                    f"{fastq_folder}/{plate}_{{source}}.R1.fastq.gz"
+                    for plate in all_plates
+                ]
+            ),
+            r2=temp(
+                [
+                    f"{fastq_folder}/{plate}_{{source}}.R2.fastq.gz"
+                    for plate in all_plates
+                ]
+            ),
             stats=f"{stats_folder}/demux/{{source}}_demux.tsv",
         log:
             "logs/demux/{source}.log",
