@@ -69,6 +69,9 @@ jobs:
       run: python3 -m pip install pandas && python3 check_clones.py
       working-directory: .test
 
+    - name: Restore test resources again
+      run: git checkout -- .test/resources
+
     - name: Test report
       uses: snakemake/snakemake-github-action@v1.24.0
       with:
