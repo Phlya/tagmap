@@ -53,6 +53,11 @@ jobs:
       run: python3 -m pip install pandas && python3 check_results.py
       working-directory: .test
 
+    # --all-temp above also deletes checked-in files that a rule can rebuild
+    # (resources/chromsizes.txt), which the next run needs at parse time.
+    - name: Restore test resources
+      run: git checkout -- .test/resources
+
     - name: Test barcoded per-clone workflow
       uses: snakemake/snakemake-github-action@v1.24.0
       with:
