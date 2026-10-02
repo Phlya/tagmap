@@ -106,6 +106,18 @@ if "plate1_B01" in clones.index:
         "plate1_B01's contaminant should be traced to plate2_A01, whose "
         f"dominant site it is - got shared_with={clones.loc['plate1_B01', 'shared_with']!r}",
     )
+    # contaminated_by is the narrower column: the source of the contamination
+    # the call itself rests on, not every secondary site traceable elsewhere.
+    check(
+        str(clones.loc["plate1_B01", "contaminated_by"]) == "plate2_A01",
+        "plate1_B01 should name plate2_A01 as what contaminated it - got "
+        f"{clones.loc['plate1_B01', 'contaminated_by']!r}",
+    )
+    check(
+        pd.isna(clones.loc["plate1_A01", "contaminated_by"]),
+        "a clean clone should have no contaminated_by - got "
+        f"{clones.loc['plate1_A01', 'contaminated_by']!r}",
+    )
 
 # Demultiplexing: reads were assigned to the right plates, none to the wrong
 # ones, and the barcode-less strays (3 per library) were left unassigned

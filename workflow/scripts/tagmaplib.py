@@ -681,6 +681,7 @@ CLONE_SUMMARY_COLUMNS = [
     "second_molecules",
     "second_frac",
     "n_secondary_sites",
+    "contaminated_by",
     "at_original_site",
     "founder_molecules",
     "founder_frac",
@@ -704,6 +705,7 @@ CLONE_REPORT_COLUMNS = [
     "dominant_frac",
     "second_position",
     "second_frac",
+    "contaminated_by",
     "shared_with",
     "reason",
 ]

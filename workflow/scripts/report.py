@@ -57,15 +57,20 @@ SECTIONS = [
         "dominant_frac is the dominant site's share of all the clone's "
         "molecules and second_frac the runner-up's. Status: clean - one "
         "site, nothing else at or above clone_max_contamination_frac; "
-        "contaminated - a second site at or above it (shared_with names "
-        "other clones whose dominant site this is, i.e. likely cross-talk); "
+        "contaminated - a second site at or above it; "
         "multiple - a second site at or above clone_multi_site_frac, so "
         "really more than one insertion or a mix of clones; unmobilized - "
         "clean, but at the original insertion site; weak - too few "
         "molecules behind the dominant site (or, with "
         "clone_require_both_sides, seen from one ITR only); no_insertion - "
         "reads but no site; too_few_reads - fewer than clone_min_reads "
-        "mobilized pairs. In the plate grids below: green - clean (with a "
+        "mobilized pairs. contaminated_by names the clone whose own "
+        "insertion sits at second_position, i.e. where the contamination "
+        "came from; shared_with is broader, listing every clone whose "
+        "dominant site turns up among this one's secondary sites at all, "
+        "including ones too thin to have been called on - so it still "
+        "hints at carry-over in a clone reported clean. "
+        "In the plate grids below: green - clean (with a "
         '"u" for unmobilized), yellow - contaminated or weak, red - '
         "multiple or no insertion, grey - too few reads.",
     ),

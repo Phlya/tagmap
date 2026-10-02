@@ -120,6 +120,14 @@ raw pre-deduplication columns still report what was sequenced.
 scatter, where no single secondary site stands out but the dominant one holds
 only a small share of all molecules.
 
+Two columns say where contamination came from. `contaminated_by` names the
+clone whose own insertion sits at `second_position` - the source of the
+contamination the call rests on, and the one to read when chasing
+well-to-well carry-over. `shared_with` is broader: every clone whose dominant
+site appears among this one's secondary sites at all, including sites too thin
+to have been called on, so it still flags carry-over in a clone reported
+`clean`.
+
 Signal at the original insertion site is treated as contamination, not as
 expected residue: a clone that mobilized has left that locus, so cassette still
 there comes from cells that never did. It is reported separately in

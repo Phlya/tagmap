@@ -237,7 +237,7 @@ rule parse2:
         "benchmarks/parse2/{sample}.tsv"
     conda:
         "../envs/all.yaml"
-    threads: 8
+    threads: 4
     params:
         # Every flag but the input, which differs for an empty BAM (below).
         parse2="--drop-sam --flip --min-mapq 1 --max-insert-size 5000 "
@@ -330,7 +330,7 @@ rule dedup:
         ),
     shell:
         """
-        pairtools dedup --backend cython --mark-dups --max-mismatch 2 \
+        pairtools dedup --backend cython --mark-dups --max-mismatch 0 \
             --p1 pos51 --p2 pos31 \
             --engine python --yaml \
             --filter 'forward:{params.filter_forward}' \

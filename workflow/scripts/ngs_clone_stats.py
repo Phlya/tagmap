@@ -152,6 +152,16 @@ def position(row):
     return f"{row['chrom']}:{row['start']}"
 
 
+def dominant_owners(row, dominant, distance):
+    """Clones whose own dominant site sits at this clone's second_position."""
+    where = getattr(row, "second_position", None)
+    if not where or pd.isna(where):
+        return []
+    chrom, start = str(where).rsplit(":", 1)
+    hits = near(chrom, int(start), dominant, distance)
+    return sorted(set(hits.loc[hits["sample_name"] != row.sample_name, "sample_name"]))
+
+
 def at_original(sites, original, max_dist):
     """Which of `sites` sit at the original, pre-mobilization locus."""
     if original is None or sites.shape[0] == 0:
@@ -358,6 +368,18 @@ if __name__ == "__main__":
         lambda sample: ", ".join(shared.get(sample, [])[:5])
         + (" ..." if len(shared.get(sample, [])) > 5 else "")
     )
+
+    # Where the contamination this clone was actually called on came from: the
+    # clone whose own insertion sits at the site reported in second_position.
+    # Narrower than shared_with on purpose - that one lists every secondary
+    # site traceable to another clone, however thin, including the ones that
+    # never cleared the thresholds, so it still hints at carry-over in a clone
+    # called clean. This column names only the source of the contamination the
+    # status rests on, and is empty when nothing qualified.
+    summary["contaminated_by"] = [
+        ", ".join(dominant_owners(row, dominant, args.shared_dist))
+        for row in summary.itertuples()
+    ]
 
     # In the order --samples listed them, i.e. the sample sheet's own order, so
     # the table lines up with how the plate was laid out rather than with how
