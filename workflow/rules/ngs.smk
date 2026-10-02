@@ -363,13 +363,26 @@ rule get_trans_side_pairs:
         filter=lambda wildcards, input: get_filter(
             wildcards.side, input.primer_positions
         ),
+        # Applied here rather than later so that everything downstream -
+        # coverage, peaks, sites and the per-side counts in ngs_qc_stats -
+        # sees one consistent set of molecules. The raw, pre-deduplication
+        # columns of ngs_qc_stats are counted from other files and so still
+        # report what was sequenced.
+        read_support=lambda wildcards, input: (
+            f"| python3 {scripts_dir}/filter_read_support.py "
+            f"--dupmarked {input.pairs} "
+            f"--min-reads {config['min_reads_per_molecule']}"
+            if config["min_reads_per_molecule"]
+            else ""
+        ),
     shell:
         """
         pairtools select -t pos51 int -t pos31 int -t pos52 int -t pos32 int \
             -t read_len1 int -t read_len2 int \
             '{params.filter}' \
-            -o {output} {input.pairs} \
-            >{log[0]} 2>&1
+            {input.pairs} 2>{log[0]} \
+            {params.read_support} \
+            >{output} 2>>{log[0]}
         """
 
 

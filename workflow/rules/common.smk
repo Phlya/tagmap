@@ -253,6 +253,13 @@ if not sample_list and not sanger_sample_list:
         "sanger_samples_path at a TSV of Sanger runs, or both."
     )
 
+if config["min_reads_per_molecule"] and not config["dedup"]:
+    raise ValueError(
+        "min_reads_per_molecule counts the PCR duplicates marked against each "
+        "molecule, so it needs dedup: true. Without deduplication nothing is "
+        "marked and every molecule would look like a single read."
+    )
+
 if sample_list and not config.get("chrom_sizes_path_no_cassette"):
     raise ValueError(
         "chrom_sizes_path_no_cassette is needed to write genome browser tracks "

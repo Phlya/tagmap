@@ -11,7 +11,9 @@ mapper: 'bwa-mem'
 
 do_fastqc: False
 trim: False
-dedup: False
+# The clone libraries carry PCR duplicates (see COPIES in make_test_data.py),
+# so deduplication is on and min_reads_per_molecule can count them.
+dedup: True
 
 cassette_name: 'test_cassette'
 forward_primer_sequence: 'GGTGATCCTAACTGACCTAAGAC'
@@ -38,6 +40,9 @@ clone_min_molecules: 3
 clone_max_contamination_frac: 0.02
 clone_multi_site_frac: 0.2
 clone_contaminant_min_molecules: 2
+# Single-read molecules are dropped: the planted noise is one read each, while
+# every real molecule was sequenced COPIES times.
+min_reads_per_molecule: 2
 clone_merge_dist: 25
 
 # chr1:17001 is the planted insertion A01 carries on plate2, so that clone

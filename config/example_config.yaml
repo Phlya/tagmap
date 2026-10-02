@@ -50,6 +50,15 @@ mapper: 'bwa-mem2'
 
 dedup: True
 
+# Drop molecules that fewer than this many reads support, counting the retained
+# read and the PCR duplicates marked against it. In an over-amplified library a
+# real fragment is copied many times, so a molecule seen exactly once saw no
+# amplification - on a real per-clone run those single-read molecules were 73%
+# of the scatter but only 34% of the dominant site. Needs dedup: True, and it
+# roughly halves every molecule count, so thresholds tuned without it have to
+# come down. 0 disables it.
+# min_reads_per_molecule: 0
+
 cassette_name: 'mobilized_enhancer'
 # Sequence of the primers used to amplify the cassette
 # If multiple PCRs were used, use the sequence of the primers used in the last step

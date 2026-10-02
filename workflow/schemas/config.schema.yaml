@@ -219,6 +219,28 @@ properties:
   blacklist:
     type: string
     description: Peaks overlapping this BED are dropped. Unset to disable.
+  min_reads_per_molecule:
+    type: integer
+    default: 0
+    description: >
+      Drop molecules that fewer than this many reads support, counting the
+      retained read and the PCR duplicates marked against it. In an
+      over-amplified library a real fragment is copied many times, so a
+      molecule seen exactly once saw no amplification at all.
+
+      Measured on a real per-clone run it separates signal from scatter better
+      than any downstream threshold: molecules at a clone's dominant insertion
+      site had a median of 5 reads and 34% were single-read, against a median
+      of 1 read and 73% single-read elsewhere. At a cut of 3 reads, 57% of the
+      dominant site's molecules survived against 14% of the rest.
+
+      It is a trade: roughly half the real signal goes too, so a genuinely rare
+      insertion captured once is lost, and the molecule counts every other
+      threshold is judged on roughly halve - thresholds calibrated without it
+      need lowering to match. 0 (the default) disables it.
+
+      Requires dedup: true, since the marked duplicates are what the count
+      comes from.
 
   # --------------------------------------------------------- peak calling ---
   peak_caller:

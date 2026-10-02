@@ -101,6 +101,21 @@ automatically a competing insertion:
   mismapping - in practice most secondary calls are a single molecule seen from
   one ITR only.
 
+`min_reads_per_molecule` works further upstream, and on the strongest signal
+available. After deduplication each retained pair is one molecule, and its PCR
+copies sit beside it as marked duplicates; in an over-amplified library a real
+fragment is copied many times, while a molecule seen exactly once never
+amplified at all. On a real per-clone run, molecules at a clone's dominant site
+had a median of 5 reads and 34% were single-read, against a median of 1 read
+and 73% single-read everywhere else - so a cut at 3 reads kept 57% of the
+dominant site's molecules and 14% of the rest. It needs `dedup: true`, and it
+is a trade: roughly half the real signal goes too, so a genuinely rare
+insertion captured once is lost, and every molecule count downstream roughly
+halves - thresholds calibrated without it have to come down to match. It
+applies to the per-side pairs, so coverage, peaks, sites and the per-side
+counts in `ngs_qc_stats.tsv` all see the same filtered set, while that file's
+raw pre-deduplication columns still report what was sequenced.
+
 `clone_min_dominant_frac` catches the opposite failure: a library that is mostly
 scatter, where no single secondary site stands out but the dominant one holds
 only a small share of all molecules.

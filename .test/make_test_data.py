@@ -51,6 +51,20 @@ INSERTIONS = [
 # pool/Sanger test plants no reads here, so it stays invisible to that test.
 CLONE_INSERTIONS = INSERTIONS + [{"pos": 22000, "strand": "+"}]
 
+# How many reads each real molecule is sequenced as, i.e. how deeply the
+# library was over-amplified. Above min_reads_per_molecule in the clone test
+# config, so real molecules survive it and the single-read noise below does not.
+COPIES = 3
+# Distance between one clone's tagmentation cuts. Above deduplication's
+# --max-mismatch, so that two molecules of the same insertion are not taken for
+# copies of each other - which would collapse the molecule counts the clone
+# calls rest on.
+MOLECULE_SPACING = 5
+# Where the single-read noise molecules land - clear of every planted
+# insertion, and of each other, so each forms its own spurious site.
+NOISE_START = 4000
+NOISE_SPACING = 1500
+
 # A short standalone contig - like SB_launchpad in the real mobilization_FR0_pools
 # project - too small to hold a long read. Deliberately independent random
 # sequence rather than an excerpt of `genome`, so there is no incidental
@@ -231,14 +245,17 @@ BARCODES = {
 }
 
 
-def clone_pairs(genome, cassette, rng, name, offsets_by_insertion, plate, mismatch=0):
+def clone_pairs(
+    genome, cassette, rng, name, offsets_by_insertion, plate, mismatch=0, copies=1
+):
     """Barcoded read pairs of one clone: R1 genomic, R2 starting with the
     plate's barcode and then the ITR primer, as the library is built.
 
     offsets_by_insertion maps an INSERTIONS index to how many distinct
     tagmentation positions to plant there per side - the clone's molecules.
     `mismatch` pairs get a base of their barcode changed, which demultiplexing
-    has to forgive.
+    has to forgive. `copies` is how many reads each molecule is sequenced as -
+    the PCR duplicates deduplication collapses back to one molecule.
     """
     r1, r2 = [], []
     for index, n_offsets in offsets_by_insertion.items():
@@ -248,13 +265,39 @@ def clone_pairs(genome, cassette, rng, name, offsets_by_insertion, plate, mismat
                 genome, cassette, insertion, side, READ_LENGTH
             )
             for offset in range(n_offsets):
-                barcode = rng.choice(BARCODES[plate][side])
-                if len(r1) < mismatch:
-                    flipped = "A" if barcode[-1] != "A" else "C"
-                    barcode = barcode[:-1] + flipped
-                read_name = f"{name}_{plate}_{index}_{side}_{offset}"
-                r1.append((read_name, genomic_mate(genome, insertion, side, offset)))
-                r2.append((read_name, barcode + cassette_mate))
+                mate = genomic_mate(
+                    genome, insertion, side, offset * MOLECULE_SPACING
+                )
+                # Several reads of one fragment: same cut, so they dedup to one
+                # molecule carrying `copies` reads - which is what
+                # min_reads_per_molecule counts.
+                for copy in range(copies):
+                    barcode = rng.choice(BARCODES[plate][side])
+                    if len(r1) < mismatch:
+                        flipped = "A" if barcode[-1] != "A" else "C"
+                        barcode = barcode[:-1] + flipped
+                    read_name = f"{name}_{plate}_{index}_{side}_{offset}_{copy}"
+                    r1.append((read_name, mate))
+                    r2.append((read_name, barcode + cassette_mate))
+    return r1, r2
+
+
+def noise_pairs(genome, cassette, rng, name, plate, n=6):
+    """Single-read molecules at scattered positions - what mismapping and
+    chimeric products look like, and what min_reads_per_molecule is meant to
+    remove: each is one fragment seen exactly once, so no amplification stands
+    behind it.
+    """
+    r1, r2 = [], []
+    for i in range(n):
+        side = ("forward", "reverse")[i % 2]
+        spot = {"pos": NOISE_START + i * NOISE_SPACING, "strand": "+"}
+        barcode = rng.choice(BARCODES[plate][side])
+        read_name = f"{name}_{plate}_noise_{i}"
+        r1.append((read_name, genomic_mate(genome, spot, side, 0)))
+        r2.append(
+            (read_name, barcode + read_from_primer(genome, cassette, spot, side, READ_LENGTH))
+        )
     return r1, r2
 
 
@@ -268,9 +311,14 @@ def make_clone_library(genome, cassette, rng, name, plates):
     r1, r2 = [], []
     for plate, offsets in plates.items():
         if offsets:
-            more1, more2 = clone_pairs(genome, cassette, rng, name, offsets, plate, mismatch=1)
+            more1, more2 = clone_pairs(
+                genome, cassette, rng, name, offsets, plate, mismatch=1, copies=COPIES
+            )
             r1 += more1
             r2 += more2
+            noise1, noise2 = noise_pairs(genome, cassette, rng, name, plate)
+            r1 += noise1
+            r2 += noise2
     # Barcode-less pairs, e.g. from the neighbouring library's PCR
     stray1, stray2 = make_ngs_reads(genome, cassette, f"{name}_stray", n_per_site=1)
     r1 += stray1[:3]

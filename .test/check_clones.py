@@ -121,9 +121,15 @@ for source in ("A01", "B01", "C01"):
         f"library {source} should have 3 barcode-less pairs, got "
         f"{stray['n_pairs'].sum()}",
     )
-# A01 plate1: 40 molecules on each of two sides
+# A01 plate1: 40 molecules on each of two sides, each sequenced COPIES times,
+# plus the planted single-read noise molecules.
+COPIES, N_NOISE = 3, 6
+expected_pairs = 40 * 2 * COPIES + N_NOISE
 a01_p1 = assigned[(assigned["source"] == "A01") & (assigned["plate"] == "plate1")]
-check(a01_p1["n_pairs"].sum() == 80, f"A01/plate1 should have 80 pairs, got {a01_p1['n_pairs'].sum()}")
+check(
+    a01_p1["n_pairs"].sum() == expected_pairs,
+    f"A01/plate1 should have {expected_pairs} pairs, got {a01_p1['n_pairs'].sum()}",
+)
 check(
     set(a01_p1.loc[a01_p1["n_pairs"] > 0, "side"]) == {"forward", "reverse"},
     "A01/plate1 should have pairs from both barcode sides",
@@ -144,6 +150,31 @@ expected_order = [
 check(
     list(clones.index) == [s for s in expected_order if s in set(clones.index)],
     f"clone rows should follow the sample sheet's order, got {list(clones.index)}",
+)
+
+# min_reads_per_molecule: the planted noise is one read per molecule and every
+# real molecule was sequenced several times, so none of the noise sites should
+# have survived into the calls. NOISE_START/NOISE_SPACING in make_test_data.py.
+NOISE_START, NOISE_SPACING = 4000, 1500
+noise_positions = {NOISE_START + i * NOISE_SPACING for i in range(N_NOISE)}
+support = pd.read_csv(
+    f"{RESULTS}/insertion_sites/all_sites_support.tsv", sep="\t", dtype={"chrom": str}
+)
+survived = [
+    (r.chrom, r.start)
+    for r in support.itertuples()
+    if r.chrom == "chr1" and any(abs(r.start - p) <= 50 for p in noise_positions)
+]
+check(
+    not survived,
+    f"single-read noise molecules should have been dropped by "
+    f"min_reads_per_molecule, but sites remain at {survived}",
+)
+# ... and the real molecules, sequenced several times over, should not have been
+check(
+    clones.loc["plate1_A01", "dominant_molecules"] == 80,
+    "plate1_A01 should keep all 80 of its molecules (40 per ITR side) through "
+    f"the read-support filter, got {clones.loc['plate1_A01', 'dominant_molecules']}",
 )
 
 for name in ("report.md", "report.pdf"):
