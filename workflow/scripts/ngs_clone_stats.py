@@ -190,13 +190,21 @@ def judge(sites, n_pairs, original, args):
         "founder_frac": 0.0,
         "reason": "",
     }
-    if n_pairs < args.min_reads:
-        row["status"] = tagmaplib.CLONE_STATUS_TOO_FEW_READS
-        row["reason"] = f"{n_pairs} mobilized pairs, need {args.min_reads}"
-        return row, None
+    # Too thin to judge, but still described below: what little was seen is
+    # worth reading even when it decides nothing, so the row carries the same
+    # columns as any other and only the status says not to trust them.
+    too_few_reads = n_pairs < args.min_reads
     if sites.shape[0] == 0:
-        row["status"] = tagmaplib.CLONE_STATUS_NO_INSERTION
-        row["reason"] = "no insertion site called"
+        row["status"] = (
+            tagmaplib.CLONE_STATUS_TOO_FEW_READS
+            if too_few_reads
+            else tagmaplib.CLONE_STATUS_NO_INSERTION
+        )
+        row["reason"] = (
+            f"{n_pairs} mobilized pairs, need {args.min_reads}"
+            if too_few_reads
+            else "no insertion site called"
+        )
         return row, None
 
     sites = sites.sort_values(["n_molecules", "start"], ascending=[False, True])
@@ -245,7 +253,13 @@ def judge(sites, n_pairs, original, args):
         + (" (the unmobilized donor locus)" if second_is_founder else "")
         + f" holds {row['second_frac']:.0%} ({row['second_molecules']} molecules)"
     )
-    if row["at_original_site"]:
+    if too_few_reads:
+        status = tagmaplib.CLONE_STATUS_TOO_FEW_READS
+        reason = (
+            f"{n_pairs} mobilized pairs, need {args.min_reads} - the site "
+            "below is what was seen, not a call"
+        )
+    elif row["at_original_site"]:
         # Mostly donor locus, but with a real integration underneath it: a
         # mixed well, not a clone that simply never mobilized.
         status = (
