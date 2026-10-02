@@ -409,6 +409,10 @@ def workflow_targets():
         targets += [
             f"{peaks_folder}/all_peaks.bed",
             f"{insertion_sites_folder}/all_sites.bed",
+            # The per-site molecule counts behind the calls - what
+            # ngs_clone_stats.py judges a clone on, and the file to look at
+            # when a call is surprising.
+            f"{insertion_sites_folder}/all_sites_support.tsv",
             f"{insertion_sites_folder}/confirmed_ngs_sites.bed",
             f"{insertion_sites_folder}/confirmed_ngs_sites_no_cassette.bed",
             f"{insertion_sites_folder}/sample_summary.tsv",
