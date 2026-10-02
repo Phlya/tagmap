@@ -682,6 +682,8 @@ CLONE_SUMMARY_COLUMNS = [
     "second_frac",
     "n_secondary_sites",
     "at_original_site",
+    "founder_molecules",
+    "founder_frac",
     "shared_with",
     "reason",
 ]

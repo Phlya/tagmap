@@ -204,7 +204,10 @@ sanger_samples = read_sample_sheet(
 # (library, plate). Without barcodes the two are the same and the plate empty.
 clone_mode = config["ngs_mode"] == "clone"
 demultiplex = bool(config.get("barcodes_path"))
-source_list = sorted(samples["name"].unique()) if samples.shape[0] else []
+# In sheet order, not sorted: it is the order the clone summary is reported in
+# (see ngs_sample_map), so a plate laid out A01..H12 reads that way rather than
+# however its names happen to sort.
+source_list = list(dict.fromkeys(samples["name"])) if samples.shape[0] else []
 sample_sources = {name: (name, "") for name in source_list}
 barcodes = None
 if demultiplex:
@@ -462,7 +465,7 @@ def ngs_sample_map():
     plate (empty without barcodes) each NGS sample came from."""
     return [
         f"{sample}={source}:{plate}"
-        for sample, (source, plate) in sorted(sample_sources.items())
+        for sample, (source, plate) in sample_sources.items()
     ]
 
 

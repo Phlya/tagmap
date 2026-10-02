@@ -80,9 +80,37 @@ count. Statuses: `clean`, `contaminated` (a second site at or above
 `clone_max_contamination_frac`; `shared_with` names the clones whose dominant
 site it is, which points at cross-talk rather than a second insertion),
 `multiple` (a second site at or above `clone_multi_site_frac`), `unmobilized`
-(clean, but at the original insertion site), `weak`, `no_insertion` and
-`too_few_reads`. The thresholds depend on how much cross-talk a run has, so
-tune them on real data. The report adds a colour-coded plate grid per plate.
+(the dominant site *is* the original locus, i.e. the clone never mobilized),
+`weak`, `no_insertion` and `too_few_reads`. The report adds a colour-coded
+plate grid per plate, and rows follow the sample sheet's own order.
+
+Two settings do most of the work, and both exist because a called site is not
+automatically a competing insertion:
+
+- `clone_merge_dist` folds sites within that distance of a better-supported one
+  into it. One clone carries one insertion, so several calls a few tens of
+  bases apart are that insertion reported more than once - the two ITR sides
+  can land a few bases apart, and reads that stopped short of the junction
+  scatter further. Pick it from the data: the gaps between neighbouring sites
+  within a clone should show a tight cluster (one insertion) and then a jump to
+  the spacing of genuinely independent integrations; set it inside that gap.
+- `clone_contaminant_min_molecules` is how many molecules a secondary site needs
+  before it counts against the clone at all. At a few dozen molecules per clone
+  a single stray molecule already clears a low percentage, so
+  `clone_max_contamination_frac` alone cannot separate contamination from
+  mismapping - in practice most secondary calls are a single molecule seen from
+  one ITR only.
+
+`clone_min_dominant_frac` catches the opposite failure: a library that is mostly
+scatter, where no single secondary site stands out but the dominant one holds
+only a small share of all molecules.
+
+Signal at the original insertion site is treated as contamination, not as
+expected residue: a clone that mobilized has left that locus, so cassette still
+there comes from cells that never did. It is reported separately in
+`founder_molecules`/`founder_frac`, and a clone whose dominant site is the
+original locus *and* which has a real integration underneath is called
+`contaminated` (a mixed well) rather than `unmobilized`.
 
 A library with no reads at all (e.g. a plate absent from a well) is fine - it
 comes out as `too_few_reads`.

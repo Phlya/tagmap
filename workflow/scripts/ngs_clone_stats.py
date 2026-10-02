@@ -47,14 +47,40 @@ argparser.add_argument("--min-reads", type=int, default=20)
 argparser.add_argument("--min-molecules", type=int, default=3)
 argparser.add_argument("--max-contamination-frac", type=float, default=0.02)
 argparser.add_argument("--multi-site-frac", type=float, default=0.2)
+argparser.add_argument(
+    "--min-dominant-frac",
+    type=float,
+    default=0.0,
+    help="The dominant site must hold at least this share of the clone's "
+    "molecules. Unlike the contamination tests, this counts every molecule, "
+    "including the single-molecule scatter no individual site is judged on - "
+    "so it catches a library that is mostly noise even though no one "
+    "secondary site stands out. 0 disables it.",
+)
 argparser.add_argument("--require-both-sides", action="store_true")
+argparser.add_argument(
+    "--contaminant-min-molecules",
+    type=int,
+    default=2,
+    help="A secondary site needs at least this many distinct molecules before "
+    "it counts against the clone at all. At a few dozen molecules per clone a "
+    "single stray one already clears a low percentage, so the fraction alone "
+    "cannot separate contamination from mismapping.",
+)
+argparser.add_argument(
+    "--contaminant-require-both-sides",
+    action="store_true",
+    help="A secondary site also has to have been seen from both ITR primers. "
+    "Strict: one-sided calls are overwhelmingly noise, but a genuine second "
+    "insertion whose other side was not captured is then missed too.",
+)
 argparser.add_argument(
     "--merge-dist",
     type=int,
     default=0,
-    help="A one-sided site within this distance of one seen only from the "
-    "opposite ITR is folded into it, as the same insertion whose two sides "
-    "were positioned a few bases apart. 0 (default) never merges.",
+    help="Sites within this distance of a better-supported one are folded "
+    "into it, as one insertion reported more than once rather than "
+    "neighbouring integrations. 0 (default) never merges.",
 )
 argparser.add_argument(
     "--shared-dist",
@@ -66,32 +92,54 @@ argparser.add_argument(
 argparser.add_argument("--output", "-o", required=True)
 
 ONE_SIDED = ("forward_only", "reverse_only")
+SIDE_COLUMNS = {"n_forward": "forward_only", "n_reverse": "reverse_only"}
 
 
-def merge_complementary(sites, distance):
-    """Fold one-sided sites into nearby ones seen from the opposite side."""
+def merge_nearby(sites, distance):
+    """Fold sites within `distance` of a better-supported one into it.
+
+    One clone carries one insertion, so several called sites within a few tens
+    of bases of each other are one insertion reported more than once, not
+    neighbouring integrations: the two ITR sides can be positioned a few bases
+    apart (the strand pos5 offset, the target-site duplication, indel wobble),
+    and reads that stopped short of the junction scatter further still. Left
+    unmerged they show up as a "second site" holding a sizeable share of the
+    molecules, which would read as contamination.
+
+    Sites are taken strongest first, so the position and strand of the merged
+    site are the best-supported one's, and the molecule counts are pooled -
+    which can turn two one-sided calls into a single two-sided one.
+
+    The cost of setting this too wide is in the other direction: in a local
+    re-mobilization assay two genuinely independent insertions can sit under
+    100bp apart, and merging would hide one of them. Keep it well below the
+    spacing of insertions the experiment is meant to resolve.
+    """
     if distance <= 0 or sites.shape[0] < 2:
         return sites
-    sites = sites.sort_values("n_molecules", ascending=False).reset_index(drop=True)
+    sites = sites.sort_values(
+        ["n_molecules", "start"], ascending=[False, True]
+    ).reset_index(drop=True)
     kept = []
     for site in sites.to_dict("records"):
         target = None
-        if site["site_sides"] in ONE_SIDED:
-            for other in kept:
-                if (
-                    other["chrom"] == site["chrom"]
-                    and other["site_sides"] in ONE_SIDED
-                    and other["site_sides"] != site["site_sides"]
-                    and abs(other["start"] - site["start"]) <= distance
-                ):
-                    target = other
-                    break
+        for other in kept:
+            if (
+                other["chrom"] == site["chrom"]
+                and abs(other["start"] - site["start"]) <= distance
+            ):
+                target = other
+                break
         if target is None:
             kept.append(site)
-        else:
-            for column in ("n_forward", "n_reverse", "n_molecules"):
-                target[column] += site[column]
-            target["site_sides"] = "both"
+            continue
+        for column in ("n_forward", "n_reverse", "n_molecules"):
+            target[column] += site[column]
+        # Pooling can complete a side the stronger call never saw.
+        seen = {
+            label for column, label in SIDE_COLUMNS.items() if target[column] > 0
+        }
+        target["site_sides"] = seen.pop() if len(seen) == 1 else "both"
     return pd.DataFrame(kept, columns=sites.columns)
 
 
@@ -104,14 +152,42 @@ def position(row):
     return f"{row['chrom']}:{row['start']}"
 
 
+def at_original(sites, original, max_dist):
+    """Which of `sites` sit at the original, pre-mobilization locus."""
+    if original is None or sites.shape[0] == 0:
+        return pd.Series(False, index=sites.index)
+    return (sites["chrom"] == original["chrom"]) & (
+        (sites["start"] - original["pos"]).abs() <= max_dist
+    )
+
+
+def counts_as_contaminant(sites, total, args):
+    """Which secondary sites are real enough to hold against a clone.
+
+    A called site is not automatically a competing insertion. At this depth
+    most secondary calls are a single molecule seen from one ITR only, which
+    is what mismapping and chimeric PCR products look like; a fraction test
+    alone cannot tell them apart, because one stray molecule out of the few
+    dozen a clone yields already clears a low percentage. So a contaminant
+    has to look like an insertion in its own right - enough molecules, and
+    optionally both ITR sides - before its share is even considered.
+    """
+    real = sites["n_molecules"] >= args.contaminant_min_molecules
+    if args.contaminant_require_both_sides:
+        real &= sites["site_sides"] == "both"
+    return real & (sites["n_molecules"] / total >= args.max_contamination_frac)
+
+
 def judge(sites, n_pairs, original, args):
     """The summary row (without sample/plate/well/shared_with) for one clone."""
     row = {
         "n_pairs": n_pairs,
         "n_sites": sites.shape[0],
-        "n_molecules": int(sites["n_molecules"].sum()),
+        "n_molecules": int(sites["n_molecules"].sum()) if sites.shape[0] else 0,
         "n_secondary_sites": 0,
         "at_original_site": False,
+        "founder_molecules": 0,
+        "founder_frac": 0.0,
         "reason": "",
     }
     if n_pairs < args.min_reads:
@@ -124,8 +200,21 @@ def judge(sites, n_pairs, original, args):
         return row, None
 
     sites = sites.sort_values(["n_molecules", "start"], ascending=[False, True])
-    total = sites["n_molecules"].sum()
+    # A clone that mobilized has left the donor locus, so signal still sitting
+    # there is not expected residue - it is cassette from cells that never
+    # mobilized, i.e. contamination, and counts as such. It is only tracked
+    # separately (founder_molecules/founder_frac) because knowing a
+    # contaminant is unmobilized carry-over rather than another clone's
+    # insertion says something different about where it came from.
+    founder = at_original(sites, original, args.original_max_dist)
+    if founder.any() and row["n_molecules"]:
+        row["founder_molecules"] = int(sites.loc[founder, "n_molecules"].sum())
+        row["founder_frac"] = row["founder_molecules"] / row["n_molecules"]
+
     top = sites.iloc[0]
+    row["at_original_site"] = bool(founder.iloc[0])
+    pool = sites
+    total = pool["n_molecules"].sum()
     row.update(
         chrom=top["chrom"],
         start=int(top["start"]),
@@ -135,38 +224,64 @@ def judge(sites, n_pairs, original, args):
         dominant_molecules=int(top["n_molecules"]),
         dominant_frac=top["n_molecules"] / total,
     )
-    others = sites.iloc[1:]
-    if others.shape[0]:
-        second = others.iloc[0]
+
+    others = pool.iloc[1:]
+    second_is_founder = False
+    real = counts_as_contaminant(others, total, args) if others.shape[0] else None
+    row["n_secondary_sites"] = int(real.sum()) if real is not None else 0
+    if real is not None and real.any():
+        second = others[real].iloc[0]
+        second_is_founder = bool(founder.loc[second.name])
         row.update(
             second_position=position(second),
             second_molecules=int(second["n_molecules"]),
             second_frac=second["n_molecules"] / total,
         )
-        row["n_secondary_sites"] = int(
-            (others["n_molecules"] / total >= args.max_contamination_frac).sum()
-        )
     else:
         row.update(second_position="", second_molecules=0, second_frac=0.0)
 
-    if original is not None:
-        row["at_original_site"] = bool(
-            top["chrom"] == original["chrom"]
-            and abs(top["start"] - original["pos"]) <= args.original_max_dist
+    where = (
+        f"second site {row['second_position']}"
+        + (" (the unmobilized donor locus)" if second_is_founder else "")
+        + f" holds {row['second_frac']:.0%} ({row['second_molecules']} molecules)"
+    )
+    if row["at_original_site"]:
+        # Mostly donor locus, but with a real integration underneath it: a
+        # mixed well, not a clone that simply never mobilized.
+        status = (
+            tagmaplib.CLONE_STATUS_CONTAMINATED
+            if row["n_secondary_sites"]
+            else tagmaplib.CLONE_STATUS_UNMOBILIZED
         )
-
-    if top["n_molecules"] < args.min_molecules:
+        reason = (
+            f"dominant site is the original insertion site, but {where}"
+            if row["n_secondary_sites"]
+            else "dominant site is the original insertion site"
+        )
+    elif top["n_molecules"] < args.min_molecules:
         status = tagmaplib.CLONE_STATUS_WEAK
         reason = f"dominant site has {int(top['n_molecules'])} molecules, need {args.min_molecules}"
     elif row["second_frac"] >= args.multi_site_frac:
-        status = tagmaplib.CLONE_STATUS_MULTIPLE
-        reason = f"second site {row['second_position']} holds {row['second_frac']:.0%}"
-    elif row["second_frac"] >= args.max_contamination_frac:
+        # A heavily contaminating unmobilized population is still contamination,
+        # not the clone carrying two insertions.
+        status = (
+            tagmaplib.CLONE_STATUS_CONTAMINATED
+            if second_is_founder
+            else tagmaplib.CLONE_STATUS_MULTIPLE
+        )
+        reason = where
+    elif row["n_secondary_sites"]:
         status = tagmaplib.CLONE_STATUS_CONTAMINATED
-        reason = f"second site {row['second_position']} holds {row['second_frac']:.0%}"
-    elif row["at_original_site"]:
-        status = tagmaplib.CLONE_STATUS_UNMOBILIZED
-        reason = "dominant site is the original insertion site"
+        reason = where
+    elif row["n_molecules"] and (
+        top["n_molecules"] / row["n_molecules"] < args.min_dominant_frac
+    ):
+        status = tagmaplib.CLONE_STATUS_WEAK
+        reason = (
+            f"dominant site holds only "
+            f"{top['n_molecules'] / row['n_molecules']:.0%} of all molecules, "
+            f"scattered over {row['n_sites']} called sites"
+        )
     elif args.require_both_sides and top["site_sides"] != "both":
         status = tagmaplib.CLONE_STATUS_WEAK
         reason = f"dominant site only seen as {top['site_sides']}"
@@ -198,7 +313,7 @@ if __name__ == "__main__":
     rows = []
     sites_by_sample = {}
     for sample, (library, plate) in sample_map.items():
-        sites = merge_complementary(
+        sites = merge_nearby(
             support[support["sample_name"] == sample], args.merge_dist
         )
         n_pairs = pairs.get(sample, 0)
@@ -230,9 +345,11 @@ if __name__ == "__main__":
         + (" ..." if len(shared.get(sample, [])) > 5 else "")
     )
 
-    summary = summary[tagmaplib.CLONE_SUMMARY_COLUMNS].sort_values(
-        ["plate", "well"], kind="stable"
-    )
+    # In the order --samples listed them, i.e. the sample sheet's own order, so
+    # the table lines up with how the plate was laid out rather than with how
+    # the names happen to sort.
+    summary = summary.set_index("sample_name").loc[list(sample_map)].reset_index()
+    summary = summary[tagmaplib.CLONE_SUMMARY_COLUMNS]
     # Nullable integers, so that a clone with no site (NaN) does not turn
     # every position in the column into a float.
     for column in ("n_pairs", "n_sites", "n_molecules", "start", "end",

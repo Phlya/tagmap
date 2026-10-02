@@ -75,6 +75,23 @@ if "plate2_B01" in clones.index:
         clones.loc["plate2_B01", "n_sites"] == 2,
         "plate2_B01 should carry two sites",
     )
+    check(
+        clones.loc["plate2_B01", "second_frac"] >= 0.2,
+        "plate2_B01's two integrations should be comparable in strength",
+    )
+
+# plate1_B01's contaminant is the founder locus, so the reason should say so -
+# unmobilized carry-over, not another clone's integration.
+if "plate1_B01" in clones.index:
+    check(
+        "donor locus" in str(clones.loc["plate1_B01", "reason"]),
+        "plate1_B01's contaminant is the donor locus and the reason should say "
+        f"so - got {clones.loc['plate1_B01', 'reason']!r}",
+    )
+    check(
+        clones.loc["plate1_B01", "founder_frac"] > 0,
+        "plate1_B01 should report a non-zero founder_frac",
+    )
 # A clean clone has nothing else
 if "plate1_A01" in clones.index:
     check(clones.loc["plate1_A01", "n_sites"] == 1, "plate1_A01 should carry one site")
@@ -115,6 +132,18 @@ check(
 check(
     assigned[assigned["mismatches"] > 0]["n_pairs"].sum() >= 1,
     "at least one pair should have matched a barcode with a mismatch",
+)
+
+# Rows should follow the sample sheet, not an alphabetical re-sort.
+sheet = pd.read_csv("config/samples_clones.tsv", sep="\t", comment="#")
+expected_order = [
+    f"{plate}_{name}"
+    for name in dict.fromkeys(sheet["name"])
+    for plate in ("plate1", "plate2")
+]
+check(
+    list(clones.index) == [s for s in expected_order if s in set(clones.index)],
+    f"clone rows should follow the sample sheet's order, got {list(clones.index)}",
 )
 
 for name in ("report.md", "report.pdf"):

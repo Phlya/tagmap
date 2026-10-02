@@ -37,6 +37,8 @@ clone_min_reads: 10
 clone_min_molecules: 3
 clone_max_contamination_frac: 0.02
 clone_multi_site_frac: 0.2
+clone_contaminant_min_molecules: 2
+clone_merge_dist: 25
 
 # chr1:17001 is the planted insertion A01 carries on plate2, so that clone
 # exercises the unmobilized call.

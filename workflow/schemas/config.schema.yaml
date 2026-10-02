@@ -166,6 +166,34 @@ properties:
       insertion whose two sides were positioned slightly apart, instead of
       counting as two sites. 0 (default) never does; max_dist_between_sides
       already combines sides within a site.
+  clone_contaminant_min_molecules:
+    type: integer
+    default: 2
+    description: >
+      ngs_mode clone only. A secondary site needs at least this many distinct
+      molecules before it counts against the clone at all. At a few dozen
+      molecules per clone a single stray molecule already clears a low
+      percentage, so clone_max_contamination_frac on its own cannot separate
+      real contamination from mismapping or chimeric products - most secondary
+      calls at this depth are a single molecule seen from one ITR only.
+  clone_contaminant_require_both_sides:
+    type: boolean
+    default: false
+    description: >
+      ngs_mode clone only. A secondary site also has to have been seen from
+      both ITR primers to count. Strict: one-sided secondary calls are
+      overwhelmingly noise, but a genuine second insertion whose other side
+      was not captured is then missed too.
+  clone_min_dominant_frac:
+    type: number
+    default: 0
+    description: >
+      ngs_mode clone only. The dominant site must hold at least this share of
+      all the clone's molecules, or the clone is called weak. Unlike
+      clone_max_contamination_frac this counts every molecule, including the
+      single-molecule scatter that no individual secondary site is judged on,
+      so it catches a library that is mostly noise even though nothing
+      secondary stands out on its own. 0 (default) disables it.
   clone_require_both_sides:
     type: boolean
     default: false

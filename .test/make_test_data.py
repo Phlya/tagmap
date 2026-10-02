@@ -45,6 +45,12 @@ INSERTIONS = [
     {"pos": 17000, "strand": "-"},
 ]
 
+# A third site, used only by the per-clone libraries below: it gives a clone two
+# real integrations that are neither the founder locus nor each other, which is
+# what separates a "multiple" call from contamination by unmobilized cells. The
+# pool/Sanger test plants no reads here, so it stays invisible to that test.
+CLONE_INSERTIONS = INSERTIONS + [{"pos": 22000, "strand": "+"}]
+
 # A short standalone contig - like SB_launchpad in the real mobilization_FR0_pools
 # project - too small to hold a long read. Deliberately independent random
 # sequence rather than an excerpt of `genome`, so there is no incidental
@@ -77,7 +83,7 @@ def build_genome():
     chrom = list(random_seq(CHROM_LENGTH))
     # Guarantee the integration motif right at each planted site, so that
     # pinpointing has something to find.
-    for insertion in INSERTIONS:
+    for insertion in CLONE_INSERTIONS:
         chrom[insertion["pos"] : insertion["pos"] + len(INSERTION_SEQ)] = list(
             INSERTION_SEQ
         )
@@ -236,7 +242,7 @@ def clone_pairs(genome, cassette, rng, name, offsets_by_insertion, plate, mismat
     """
     r1, r2 = [], []
     for index, n_offsets in offsets_by_insertion.items():
-        insertion = INSERTIONS[index]
+        insertion = CLONE_INSERTIONS[index]
         for side in ("forward", "reverse"):
             cassette_mate = read_from_primer(
                 genome, cassette, insertion, side, READ_LENGTH
@@ -275,13 +281,14 @@ def make_clone_library(genome, cassette, rng, name, plates):
 
 
 # What each (well, plate) of the clone test holds, and so what the workflow is
-# expected to call - see check_clones.py. Insertion indices are into INSERTIONS.
+# expected to call - see check_clones.py. Indices are into CLONE_INSERTIONS.
 CLONE_LIBRARIES = {
     # One dominant site on each plate: clean.
     "A01": {"plate1": {0: 40}, "plate2": {1: 40}},
-    # A small contaminant (2 molecules per side beside 40) on plate1, and two
-    # equal insertions on plate2.
-    "B01": {"plate1": {0: 40, 1: 2}, "plate2": {0: 40, 1: 40}},
+    # On plate1 a small contaminant from the founder locus (2 molecules per side
+    # beside 40); on plate2 two equally strong real integrations, neither of
+    # them the founder locus.
+    "B01": {"plate1": {0: 40, 1: 2}, "plate2": {0: 40, 2: 40}},
     # Too few reads on plate1, and nothing at all on plate2.
     "C01": {"plate1": {0: 2}, "plate2": {}},
 }
