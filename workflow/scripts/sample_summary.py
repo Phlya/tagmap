@@ -7,7 +7,6 @@ founder/construct contig rather than mobilised into the genome.
 """
 
 import argparse
-import os
 
 import bioframe
 import pandas as pd
@@ -46,12 +45,6 @@ argparser.add_argument(
 argparser.add_argument("--output", "-o", required=True)
 
 
-def sample_and_side(path, suffix):
-    base = os.path.basename(path)[: -len(suffix)]
-    sample, side = base.rsplit("_", 1)
-    return sample, side
-
-
 def read_coverage(paths):
     """Per-position coverage, plus the full set of configured sample names -
     every sample gets a coverage file, even an empty one, so this is also
@@ -59,7 +52,7 @@ def read_coverage(paths):
     frames = []
     samples = set()
     for path in paths:
-        sample, _side = sample_and_side(path, "_coverage.bedgraph")
+        sample, _side = tagmaplib.sample_and_side(path, "_coverage.bedgraph")
         samples.add(sample)
         try:
             df = pd.read_csv(
@@ -114,7 +107,7 @@ def tier_counts(peaks, evidence_paths, max_dist):
 
     evidence_frames = []
     for path in evidence_paths:
-        sample, side = sample_and_side(path, "_evidence.tsv")
+        sample, side = tagmaplib.sample_and_side(path, "_evidence.tsv")
         try:
             ev = pd.read_csv(path, sep="\t", dtype={"chrom": str})
         except pd.errors.EmptyDataError:

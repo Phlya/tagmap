@@ -52,8 +52,12 @@ for _key, _subpath in {
 # project may skip them entirely and give sanger_forward_primer_sequence/
 # sanger_reverse_primer_sequence instead (checked once sample_list/
 # sanger_sample_list are known, further down).
-config.setdefault("sanger_forward_primer_sequence", config.get("forward_primer_sequence"))
-config.setdefault("sanger_reverse_primer_sequence", config.get("reverse_primer_sequence"))
+config.setdefault(
+    "sanger_forward_primer_sequence", config.get("forward_primer_sequence")
+)
+config.setdefault(
+    "sanger_reverse_primer_sequence", config.get("reverse_primer_sequence")
+)
 
 
 # Anchored to the workflow rather than the working directory, so that the
@@ -123,6 +127,35 @@ def cassette_length():
     return chromsizes.loc[config["cassette_name"]]["size"]
 
 
+def construct_contigs():
+    """Every contig that is founder/construct sequence rather than real
+    genome - the cassette payload (cassette_name) plus anything else (e.g. a
+    landing-pad contig) that only exists because chrom_sizes_path_no_cassette
+    trims it out for genome-browser-facing outputs. Derived as that set
+    difference rather than a config value of its own, so a project's
+    landing-pad contig only has to be named once (in the reference genome and
+    chrom_sizes_path_no_cassette), not duplicated into a second config key
+    that could drift out of sync with it - see sample_summary.py's
+    mobilization_efficiency, which needs the full set (unlike most
+    --construct-contigs uses elsewhere, which mean specifically the payload
+    a read can be sequenced from, not the founder locus - see e.g.
+    sanger_sites.py's is_construct, where a landing-pad read is a legitimate
+    site to call, just one that's classified unmobilized afterwards).
+    Falls back to just cassette_name if chrom_sizes_path_no_cassette isn't
+    configured, since there is then nothing to diff it against.
+    """
+    no_cassette_path = config.get("chrom_sizes_path_no_cassette")
+    if not no_cassette_path:
+        return [config["cassette_name"]]
+    full = pd.read_table(
+        config["chrom_sizes_path"], header=None, sep="\t", names=["chrom", "size"]
+    )["chrom"]
+    no_cassette = pd.read_table(
+        no_cassette_path, header=None, sep="\t", names=["chrom", "size"]
+    )["chrom"]
+    return sorted(set(full) - set(no_cassette))
+
+
 # Depending on the mapper, the index files will be different
 if config["mapper"] == "bwa-mem":
     idx = multiext(refgen_path, ".amb", ".ann", ".bwt", ".pac", ".sa")
@@ -164,15 +197,67 @@ sanger_samples = read_sample_sheet(
     config.get("sanger_samples_path"), "../schemas/sanger_samples.schema.yaml"
 )
 
-sample_list = sorted(samples["name"].unique()) if samples.shape[0] else []
+# What each NGS library is, and whether it is split by in-read barcode first.
+# source_list is the libraries as listed in samples_path; sample_list is what
+# the rest of the workflow sees, which with barcodes is one sample per library
+# and plate, "{plate}_{name}" - sample_sources maps each back to its
+# (library, plate). Without barcodes the two are the same and the plate empty.
+clone_mode = config["ngs_mode"] == "clone"
+demultiplex = bool(config.get("barcodes_path"))
+# In sheet order, not sorted: it is the order the clone summary is reported in
+# (see ngs_sample_map), so a plate laid out A01..H12 reads that way rather than
+# however its names happen to sort.
+source_list = list(dict.fromkeys(samples["name"])) if samples.shape[0] else []
+sample_sources = {name: (name, "") for name in source_list}
+barcodes = None
+if demultiplex:
+    if not source_list:
+        raise ValueError("barcodes_path needs NGS libraries in samples_path to split.")
+    barcodes = tagmaplib.read_barcodes(
+        config["barcodes_path"], config["barcode_max_mismatch"]
+    )
+    all_plates = list(dict.fromkeys(barcodes["plate"]))
+    sample_sources = {}
+    for source in source_list:
+        rows = samples[samples["name"] == source]
+        plates = all_plates
+        if "plates" in rows.columns and rows["plates"].notna().any():
+            wanted = {
+                plate.strip()
+                for cell in rows["plates"].dropna()
+                for plate in cell.split(",")
+                if plate.strip()
+            }
+            unknown = sorted(wanted - set(all_plates))
+            if unknown:
+                raise ValueError(
+                    f"Library {source!r} lists plates {unknown}, which are not "
+                    f"in {config['barcodes_path']}."
+                )
+            plates = [plate for plate in all_plates if plate in wanted]
+        for plate in plates:
+            sample_sources[f"{plate}_{source}"] = (source, plate)
+sample_list = sorted(sample_sources)
 sanger_sample_list = (
     sorted(sanger_samples["name"].unique()) if sanger_samples.shape[0] else []
 )
+if set(sample_list) & set(sanger_sample_list):
+    raise ValueError(
+        "NGS and Sanger sample names must be distinct, but both have: "
+        f"{sorted(set(sample_list)& set(sanger_sample_list))}"
+    )
 
 if not sample_list and not sanger_sample_list:
     raise ValueError(
         "No samples to process. Point samples_path at a TSV of NGS libraries, "
         "sanger_samples_path at a TSV of Sanger runs, or both."
+    )
+
+if config["min_reads_per_molecule"] and not config["dedup"]:
+    raise ValueError(
+        "min_reads_per_molecule counts the PCR duplicates marked against each "
+        "molecule, so it needs dedup: true. Without deduplication nothing is "
+        "marked and every molecule would look like a single read."
     )
 
 if sample_list and not config.get("chrom_sizes_path_no_cassette"):
@@ -315,19 +400,28 @@ def workflow_targets():
                 read=["R1", "R2"],
             )
         targets += expand(f"{pairs_folder}/{{sample}}_stats.yml", sample=sample_list)
-        targets += expand(
-            f"{coverage_folder}/{{sample}}_{{side}}_coverage_for_ucsc.bedgraph",
-            sample=sample_list,
-            side=["forward", "reverse"],
-        )
+        if not clone_mode:
+            targets += expand(
+                f"{coverage_folder}/{{sample}}_{{side}}_coverage_for_ucsc.bedgraph",
+                sample=sample_list,
+                side=["forward", "reverse"],
+            )
         targets += [
             f"{peaks_folder}/all_peaks.bed",
             f"{insertion_sites_folder}/all_sites.bed",
+            # The per-site molecule counts behind the calls - what
+            # ngs_clone_stats.py judges a clone on, and the file to look at
+            # when a call is surprising.
+            f"{insertion_sites_folder}/all_sites_support.tsv",
             f"{insertion_sites_folder}/confirmed_ngs_sites.bed",
             f"{insertion_sites_folder}/confirmed_ngs_sites_no_cassette.bed",
             f"{insertion_sites_folder}/sample_summary.tsv",
             f"{stats_folder}/ngs_qc_stats.tsv",
         ]
+        if demultiplex:
+            targets.append(f"{stats_folder}/demux_stats.tsv")
+        if clone_mode:
+            targets.append(f"{stats_folder}/ngs_clone_summary.tsv")
     if sanger_sample_list:
         targets += expand(
             f"{sanger_folder}/{{sample}}_reads.tsv", sample=sanger_sample_list
@@ -343,6 +437,7 @@ def workflow_targets():
             f"{stats_folder}/sanger_clone_summary.tsv",
             f"{stats_folder}/sanger_positions.tsv",
             f"{stats_folder}/sanger_position_counts.tsv",
+            f"{stats_folder}/sanger_read_qc.tsv",
         ]
     if do_validation:
         targets += [
@@ -374,3 +469,20 @@ def sanger_ngs_pairs():
             renamed_sample, _ = tagmaplib.rename_clone_id(sample, "")
             pairs.append(f"{renamed_sample}={ngs_sample}")
     return pairs
+
+
+def ngs_sample_map():
+    """sample=library:plate entries for ngs_clone_stats.py - which library and
+    plate (empty without barcodes) each NGS sample came from."""
+    return [
+        f"{sample}={source}:{plate}"
+        for sample, (source, plate) in sample_sources.items()
+    ]
+
+
+def library_fastqs(wildcards):
+    """The fastq files of one library as listed in samples_path - R1 or R2
+    according to the read wildcard (the sheet's columns are fastq1/fastq2)."""
+    return samples.loc[
+        samples["name"] == wildcards.source, f"fastq{wildcards.read[-1]}"
+    ]

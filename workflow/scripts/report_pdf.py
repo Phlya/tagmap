@@ -109,7 +109,9 @@ def add_table(pdf, df, row_colors=None, bold_rows=None):
             header.cell(col)
         for i, (_, data) in enumerate(formatted.iterrows()):
             row = table.row()
-            style = FontFace(fill_color=row_colors[i] if row_colors is not None else WHITE)
+            style = FontFace(
+                fill_color=row_colors[i] if row_colors is not None else WHITE
+            )
             for col in formatted.columns:
                 row.cell(data[col], style=style)
 
@@ -117,9 +119,18 @@ def add_table(pdf, df, row_colors=None, bold_rows=None):
 def add_legend(pdf, has_region=False, has_duplicates=False):
     pdf.set_font("helvetica", size=8)
     for color, label in (
-        (tagmaplib.CLONE_GREEN, "both sides confirmed and agree, or only one side passed and NGS confirms both sides there"),
-        (tagmaplib.CLONE_YELLOW, "only one side passed, and NGS did not confirm both sides there"),
-        (tagmaplib.CLONE_RED, "neither side passed, or both passed but disagree on position"),
+        (
+            tagmaplib.CLONE_GREEN,
+            "both sides confirmed and agree, or only one side passed and NGS confirms both sides there",
+        ),
+        (
+            tagmaplib.CLONE_YELLOW,
+            "only one side passed, and NGS did not confirm both sides there",
+        ),
+        (
+            tagmaplib.CLONE_RED,
+            "neither side passed, or both passed but disagree on position",
+        ),
     ):
         pdf.set_fill_color(*color)
         pdf.cell(4, 4, "", border=1, fill=True)
@@ -269,7 +280,9 @@ def draw_well_grid(pdf, x0, y0, wells, n_rows, n_cols):
                 pdf.set_font("helvetica", size=6)
     # The plate's own outline, around the wells only - not the row/column
     # labels floating outside it.
-    pdf.rect(x0 + WELL_LABEL, y0 + WELL_LABEL, n_cols * pitch, n_rows * pitch, style="D")
+    pdf.rect(
+        x0 + WELL_LABEL, y0 + WELL_LABEL, n_cols * pitch, n_rows * pitch, style="D"
+    )
 
 
 def draw_plate(pdf, sample_name, group, dedup_names=frozenset(), new_page=True):
@@ -320,11 +333,39 @@ def draw_plate(pdf, sample_name, group, dedup_names=frozenset(), new_page=True):
     block_height = 8 + 1 + WELL_LABEL + n_rows * tagmaplib.WELL_PITCH_MM
 
     if new_page or pdf.get_y() + block_height > pdf.page_break_trigger:
-        pdf.add_page()
+        pdf.add_page(orientation="P")
     pdf.set_font("helvetica", style="B", size=12)
-    pdf.cell(0, 8, tagmaplib.plate_label(sample_name, group), new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(
+        0, 8, tagmaplib.plate_label(sample_name, group), new_x="LMARGIN", new_y="NEXT"
+    )
     pdf.ln(1)
 
+    x0, y0 = pdf.get_x(), pdf.get_y()
+    draw_well_grid(pdf, x0, y0, wells, n_rows, n_cols)
+    pdf.set_xy(x0, y0 + WELL_LABEL + n_rows * tagmaplib.WELL_PITCH_MM + 4)
+    return True
+
+
+def draw_clone_plate(pdf, plate, group, new_page=True):
+    """One color-coded well grid for a plate of NGS clones (see
+    tagmaplib.clone_plate_wells), packed under the previous one if
+    new_page=False and it fits, as draw_plate does. Returns True if anything
+    was drawn - False if no library name parses as a well."""
+    wells = {
+        position: (color, marker, False, False)
+        for position, (_, color, marker) in tagmaplib.clone_plate_wells(group).items()
+    }
+    if not wells:
+        return False
+    n_rows, n_cols = tagmaplib.plate_layout(wells.keys())
+    block_height = 8 + 1 + WELL_LABEL + n_rows * tagmaplib.WELL_PITCH_MM
+    if new_page or pdf.get_y() + block_height > pdf.page_break_trigger:
+        pdf.add_page(orientation="P")
+    pdf.set_font("helvetica", style="B", size=12)
+    pdf.cell(
+        0, 8, tagmaplib.clone_plate_label(plate), new_x="LMARGIN", new_y="NEXT"
+    )
+    pdf.ln(1)
     x0, y0 = pdf.get_x(), pdf.get_y()
     draw_well_grid(pdf, x0, y0, wells, n_rows, n_cols)
     pdf.set_xy(x0, y0 + WELL_LABEL + n_rows * tagmaplib.WELL_PITCH_MM + 4)
@@ -360,7 +401,9 @@ def draw_read_qc_plate(pdf, sample_name, group):
 
     pdf.add_page(orientation="L")
     pdf.set_font("helvetica", style="B", size=12)
-    pdf.cell(0, 8, tagmaplib.plate_label(sample_name, group), new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(
+        0, 8, tagmaplib.plate_label(sample_name, group), new_x="LMARGIN", new_y="NEXT"
+    )
     pdf.ln(1)
     add_read_qc_legend(pdf)
 
@@ -380,6 +423,8 @@ def draw_read_qc_plate(pdf, sample_name, group):
 if __name__ == "__main__":
     argparser = argparse.ArgumentParser(description=__doc__)
     argparser.add_argument("--ngs-qc", default=None)
+    argparser.add_argument("--demux", default=None, help="demux_stats.tsv")
+    argparser.add_argument("--ngs-clones", default=None, help="ngs_clone_summary.tsv")
     argparser.add_argument("--sanger-qc", default=None)
     argparser.add_argument("--sanger-clones", default=None)
     argparser.add_argument("--sanger-positions", default=None)
@@ -401,7 +446,22 @@ if __name__ == "__main__":
     pdf = FPDF(orientation="P", unit="mm", format="A4")
     pdf.set_auto_page_break(True, margin=10)
 
-    pdf.add_page()
+    # sanger_clones (sanger_clone_summary.tsv) routinely has 14+ columns,
+    # several free-text (summary, position) - too wide to stay readable at
+    # A4 portrait's ~190mm usable width, unlike every other section's table.
+    # ngs_qc is similarly wide once its raw/forward/reverse pair columns are
+    # all included.
+    LANDSCAPE_SECTIONS = {"ngs_qc", "ngs_clones", "sanger_clones"}
+
+    # The title page doubles as the first section's own page (see
+    # first_section below), so its orientation has to match whichever
+    # section actually ends up first - ngs_qc is normally that section, and
+    # is itself landscape, so a plain pdf.add_page() here (always portrait)
+    # would leave that table stranded on a page too narrow for it.
+    first_attr = next(
+        (attr for attr, _, _ in SECTIONS if getattr(args, attr) is not None), None
+    )
+    pdf.add_page(orientation="L" if first_attr in LANDSCAPE_SECTIONS else "P")
     pdf.set_font("helvetica", style="B", size=20)
     pdf.cell(0, 14, "TagMap summary", new_x="LMARGIN", new_y="NEXT")
 
@@ -413,7 +473,7 @@ if __name__ == "__main__":
         df = tagmaplib.tidy_numeric_dtypes(pd.read_csv(path, sep="\t"))
 
         if not first_section:
-            pdf.add_page()
+            pdf.add_page(orientation="L" if attr in LANDSCAPE_SECTIONS else "P")
         first_section = False
 
         pdf.set_font("helvetica", style="B", size=14)
@@ -451,7 +511,54 @@ if __name__ == "__main__":
                     if color == tagmaplib.CLONE_GREEN and row.in_region
                 }
 
-        add_table(pdf, df, row_colors, bold_rows)
+        if attr == "demux":
+            libraries, plates = tagmaplib.demux_tables(df)
+            pdf.set_font("helvetica", style="B", size=11)
+            pdf.cell(0, 7, "Per library", new_x="LMARGIN", new_y="NEXT")
+            add_table(pdf, tagmaplib.tidy_numeric_dtypes(libraries))
+            pdf.ln(3)
+            pdf.set_font("helvetica", style="B", size=11)
+            pdf.cell(0, 7, "Per plate", new_x="LMARGIN", new_y="NEXT")
+            add_table(pdf, tagmaplib.tidy_numeric_dtypes(plates))
+        elif attr == "ngs_clones":
+            add_table(
+                pdf,
+                df[tagmaplib.CLONE_REPORT_COLUMNS],
+                [
+                    tagmaplib.CLONE_STATUS_COLORS.get(status, tagmaplib.READ_QC_GREY)
+                    for status in df["status"]
+                ],
+            )
+            plates_drawn = 0
+            for plate, group in df.groupby("plate", dropna=False):
+                if draw_clone_plate(pdf, plate, group, new_page=plates_drawn % 2 == 0):
+                    plates_drawn += 1
+        elif attr == "ngs_qc":
+            # Raw and deduplicated/sidedness columns together are too wide
+            # for one readable table, even in landscape - see
+            # tagmaplib.NGS_QC_RAW_COLUMNS.
+            dedup_columns = (
+                ["sample_name"]
+                + tagmaplib.NGS_QC_DEDUPLICATED_COLUMNS
+                + tagmaplib.NGS_QC_SIDEDNESS_COLUMNS[1:]
+            )
+            pdf.set_font("helvetica", style="B", size=11)
+            pdf.cell(
+                0, 7, "Raw (pre-deduplication) pairs", new_x="LMARGIN", new_y="NEXT"
+            )
+            add_table(pdf, df[tagmaplib.NGS_QC_RAW_COLUMNS])
+            pdf.ln(3)
+            pdf.set_font("helvetica", style="B", size=11)
+            pdf.cell(
+                0,
+                7,
+                "Deduplicated pairs and site sidedness",
+                new_x="LMARGIN",
+                new_y="NEXT",
+            )
+            add_table(pdf, df[dedup_columns])
+        else:
+            add_table(pdf, df, row_colors, bold_rows)
 
         if attr == "sanger_qc" and args.sanger_read_qc:
             read_qc = pd.read_csv(args.sanger_read_qc, sep="\t")
@@ -469,7 +576,7 @@ if __name__ == "__main__":
                 f"{n_unmobilized} of {df.shape[0]} clones unmobilized (both "
                 "primers independently confirm the original insertion "
                 "site) - see the Sanger position counts table's own "
-                "\"unmobilized\" row for clones confirmed there from only "
+                '"unmobilized" row for clones confirmed there from only '
                 "one primer",
                 new_x="LMARGIN",
                 new_y="NEXT",

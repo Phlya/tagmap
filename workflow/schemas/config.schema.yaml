@@ -7,8 +7,9 @@ properties:
   samples_path:
     type: string
     description: >
-      TSV of paired-end NGS libraries (columns name, fastq1, fastq2). Rows
-      sharing a name are merged. Leave unset for a Sanger-only run.
+      TSV of paired-end NGS libraries (columns name, fastq1, fastq2, and
+      optionally plates). Rows sharing a name are merged. Leave unset for a
+      Sanger-only run.
   sanger_samples_path:
     type: string
     description: >
@@ -76,6 +77,130 @@ properties:
       Motif the transposon integrates into - TA for Sleeping Beauty, TTAA for
       PiggyBac. Sites are snapped onto the nearest occurrence.
 
+  # ----------------------------------------------------------- NGS libraries --
+  ngs_mode:
+    type: string
+    enum: ["pool", "clone"]
+    default: "pool"
+    description: >
+      What an NGS library is. "pool" is a population of cells carrying many
+      independent insertions, summarised by the sites found. "clone" is one
+      clonal line, expected to carry a single insertion at a few hundred to a
+      few thousand reads: the site calling is the same, but each library is
+      then also judged on whether one position dominates and nothing else is
+      present above background - see ngs_clone_summary.tsv and the clone_*
+      settings. Per-sample genome browser tracks are not requested in clone
+      mode, since there are too many libraries for them to be useful.
+  barcodes_path:
+    type: string
+    description: >
+      TSV (columns plate, side, barcode) of the in-read barcodes that label
+      plates, to demultiplex each library in samples_path by - see
+      demux_barcodes.py. side is forward or reverse: the ITR the read
+      carrying that barcode starts at. A plate may list several barcodes per
+      side (e.g. staggered lengths to add diversity to the first bases of the
+      library); a read carries any one of them, and they all label the same
+      plate. Every library in samples_path is then split into one sample per
+      plate, named "{plate}_{name}". Leave unset for libraries that are not
+      barcoded.
+  barcode_max_mismatch:
+    type: integer
+    default: 1
+    description: >
+      Mismatches tolerated when matching a barcode to the start of a read.
+      Barcodes are checked at startup to differ from each other by more than
+      twice this, so it can never make two of them ambiguous.
+  barcode_reads:
+    type: string
+    enum: ["R1", "R2", "either"]
+    default: "R2"
+    description: >
+      Which read the barcode starts. It is on the read that starts at the ITR
+      primer, which is R2 in the usual TagMap layout.
+  barcode_require_primer:
+    type: boolean
+    default: false
+    description: >
+      Only accept a barcode that is directly followed by the ITR primer of its
+      own side (forward_primer_sequence for forward barcodes,
+      reverse_primer_sequence for reverse ones). Stricter, and a check on the
+      read layout, but wrong if anything sits between barcode and primer.
+  barcode_primer_max_mismatch:
+    type: integer
+    default: 2
+    description: Mismatches tolerated in that primer check.
+  clone_min_reads:
+    type: integer
+    default: 20
+    description: >
+      ngs_mode clone only. A clone with fewer mobilized (junction) read pairs
+      than this is called too_few_reads rather than judged on too little.
+  clone_min_molecules:
+    type: integer
+    default: 3
+    description: >
+      ngs_mode clone only. The dominant site needs at least this many distinct
+      molecules (tagmentation positions, not reads - PCR copies do not count)
+      behind it, or the clone is called weak.
+  clone_max_contamination_frac:
+    type: number
+    default: 0.02
+    description: >
+      ngs_mode clone only. Another called site holding at least this fraction
+      of the clone's molecules makes it contaminated. Tune on real data - the
+      right level depends on how much barcode cross-talk and index hopping the
+      run has.
+  clone_multi_site_frac:
+    type: number
+    default: 0.2
+    description: >
+      ngs_mode clone only. Another site holding at least this fraction means
+      the clone really carries more than one insertion (or is a mix of
+      clones): multiple rather than contaminated.
+  clone_merge_dist:
+    type: integer
+    default: 0
+    description: >
+      ngs_mode clone only. A site seen from one ITR side only, within this many
+      bases of one seen only from the other, is folded into it as one
+      insertion whose two sides were positioned slightly apart, instead of
+      counting as two sites. 0 (default) never does; max_dist_between_sides
+      already combines sides within a site.
+  clone_contaminant_min_molecules:
+    type: integer
+    default: 2
+    description: >
+      ngs_mode clone only. A secondary site needs at least this many distinct
+      molecules before it counts against the clone at all. At a few dozen
+      molecules per clone a single stray molecule already clears a low
+      percentage, so clone_max_contamination_frac on its own cannot separate
+      real contamination from mismapping or chimeric products - most secondary
+      calls at this depth are a single molecule seen from one ITR only.
+  clone_contaminant_require_both_sides:
+    type: boolean
+    default: false
+    description: >
+      ngs_mode clone only. A secondary site also has to have been seen from
+      both ITR primers to count. Strict: one-sided secondary calls are
+      overwhelmingly noise, but a genuine second insertion whose other side
+      was not captured is then missed too.
+  clone_min_dominant_frac:
+    type: number
+    default: 0
+    description: >
+      ngs_mode clone only. The dominant site must hold at least this share of
+      all the clone's molecules, or the clone is called weak. Unlike
+      clone_max_contamination_frac this counts every molecule, including the
+      single-molecule scatter that no individual secondary site is judged on,
+      so it catches a library that is mostly noise even though nothing
+      secondary stands out on its own. 0 (default) disables it.
+  clone_require_both_sides:
+    type: boolean
+    default: false
+    description: >
+      ngs_mode clone only. Call a clone weak unless its dominant site was seen
+      from both ITR primers, rather than accepting one side alone.
+
   # ---------------------------------------------------------- NGS analysis --
   do_fastqc:
     type: boolean
@@ -94,6 +219,28 @@ properties:
   blacklist:
     type: string
     description: Peaks overlapping this BED are dropped. Unset to disable.
+  min_reads_per_molecule:
+    type: integer
+    default: 0
+    description: >
+      Drop molecules that fewer than this many reads support, counting the
+      retained read and the PCR duplicates marked against it. In an
+      over-amplified library a real fragment is copied many times, so a
+      molecule seen exactly once saw no amplification at all.
+
+      Measured on a real per-clone run it separates signal from scatter better
+      than any downstream threshold: molecules at a clone's dominant insertion
+      site had a median of 5 reads and 34% were single-read, against a median
+      of 1 read and 73% single-read elsewhere. At a cut of 3 reads, 57% of the
+      dominant site's molecules survived against 14% of the rest.
+
+      It is a trade: roughly half the real signal goes too, so a genuinely rare
+      insertion captured once is lost, and the molecule counts every other
+      threshold is judged on roughly halve - thresholds calibrated without it
+      need lowering to match. 0 (the default) disables it.
+
+      Requires dedup: true, since the marked duplicates are what the count
+      comes from.
 
   # --------------------------------------------------------- peak calling ---
   peak_caller:
@@ -232,6 +379,24 @@ properties:
       fall back to "."); 0 disables the check and trusts every peak's own
       orientation, however thin.
 
+  min_orientation_support_confirmed:
+    type: integer
+    default: 1
+    description: >
+      Like min_orientation_support, but only counting peaks that are
+      themselves junction-tier (find_peaks_junctions.py's own evidence
+      files - only the junction_tiered peak caller writes these). A
+      junction-tier peak already cleared its own evidence bar on the way in
+      - a directly sequenced junction, plus a TA-motif check for one only
+      thinly supported (motif_max_support) - so trusting its stated
+      orientation on far less pooled support than an ordinary peak is a
+      deliberate, calibrated choice, not a lowered bar across the board:
+      an orientation is trusted once it clears *either* this threshold on
+      junction-tier support alone, or min_orientation_support on every peak
+      pooled together. 0 disables this, falling back to
+      min_orientation_support for every peak regardless of tier. Has no
+      effect for a peak caller other than junction_tiered.
+
   # ------------------------------------------------------- Sanger analysis --
   sanger_basecaller:
     type: string
@@ -258,6 +423,17 @@ properties:
     description: >
       A read fails QC if more than this many bases before the genomic segment
       are neither aligned to the genome nor to the cassette.
+  sanger_max_deletion_size:
+    type: integer
+    default: 2000
+    description: >
+      A read's genomic segments after the one nearest the primer do not fail
+      it as an ambiguous multi-site read when each is colinear with the one
+      before it - same chromosome, same strand - and separated from it by a
+      deletion no larger than this. bwa reports a deletion too large for a
+      single CIGAR 'D' as a separate supplementary alignment instead, which
+      this is meant to tell apart from a genuinely unrelated second
+      alignment.
   sanger_name_regex:
     type: ["string", "null"]
     default: null
@@ -329,6 +505,17 @@ properties:
     type: integer
     default: 500
     description: Distance within which a Sanger and an NGS site are the same site.
+  validation_ambiguity_dist:
+    type: integer
+    default: 50
+    description: >
+      A Sanger read can land a few bp closer to a neighbouring NGS site than
+      to the one it really belongs to. If several NGS sites lie within this
+      distance of a Sanger site and they do not all show the same orientation
+      and the same sides (forward/reverse), the Sanger site cannot be tied to
+      one of them and its ngs_verification is "ambiguous" - NGS is then not
+      used to complete a side Sanger left unconfirmed. Set to 0 to only
+      consider NGS sites overlapping the Sanger site.
 
   # --------------------------------------------------------------- outputs --
   results_folder:

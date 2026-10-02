@@ -31,6 +31,46 @@ SITE_COLUMNS = ["chrom", "start", "end", "sample_name", "score", "strand"]
 # Columns of the bedgraph files written by coverage.py.
 COVERAGE_COLUMNS = ["chrom", "start", "end", "count", "fraction", "orientation"]
 
+# Column groups of ngs_qc_stats.tsv (written by ngs_stats.py) - split out
+# here, rather than left as one flat column list, so report.py/report_pdf.py
+# can render the raw pre-deduplication counts and the deduplicated/sidedness
+# counts as two separate tables: together they're too wide for one table's
+# columns to stay readable even on a landscape page.
+NGS_QC_RAW_COLUMNS = [
+    "sample_name",
+    "total_pairs",
+    "mapped_pairs",
+    "frac_mapped",
+    "raw_unusable_pairs",
+    "raw_itr_anchored_pairs",
+    "raw_forward_itr_anchored_pairs",
+    "raw_reverse_itr_anchored_pairs",
+    "raw_junction_pairs",
+    "raw_forward_junction_pairs",
+    "raw_reverse_junction_pairs",
+    "raw_non_junction_pairs",
+    "raw_peak_support_pairs",
+    "raw_site_support_pairs",
+]
+
+NGS_QC_DEDUPLICATED_COLUMNS = [
+    "forward_junction_pairs",
+    "reverse_junction_pairs",
+    "mobilized_pairs",
+    "total_deduplicated_junction_pairs",
+    "frac_mobilized",
+]
+
+NGS_QC_SIDEDNESS_COLUMNS = [
+    "sample_name",
+    "n_sites",
+    "n_two_sided",
+    "frac_two_sided",
+    "n_one_sided",
+    "n_forward_only",
+    "n_reverse_only",
+]
+
 
 # Walk types of pairtools parse2 in which the cassette/genome junction was
 # actually sequenced, because both sides of the pair come from within one read
@@ -106,6 +146,18 @@ def flip_strand(strand):
     """Swap + and -, leaving anything else (e.g. '.') alone."""
     strand = pd.Series(strand, dtype=object)
     return strand.map({"+": "-", "-": "+"}).fillna(strand)
+
+
+def sample_and_side(path, suffix):
+    """Pull {sample}/{side} back out of a "{sample}_{side}{suffix}" filename -
+    the naming convention find_peaks_junctions.py's per-side outputs and
+    coverage.py's bedgraphs both use.
+    """
+    import os
+
+    base = os.path.basename(path)[: -len(suffix)]
+    sample, side = base.rsplit("_", 1)
+    return sample, side
 
 
 def read_peaks(path, columns=None):
@@ -210,27 +262,58 @@ NGS_SIDE_SETS = {
     "reverse_only": {"reverse"},
 }
 
+# all_peaks.bed's own "side" column (see combine_peaks.py) encodes which ITR
+# primer a peak is anchored at as "+"/"-", the same symbols - but not the same
+# meaning - as a site's genomic strand. Shared so compare_sanger_ngs.py and
+# sanger_stats.py's exact-peak-match fallback (see ngs_verification_label)
+# read it the same way.
+PEAK_SIDE_DIRECTIONS = {"+": "forward", "-": "reverse"}
 
-def ngs_verification_label(sanger_sides, ngs_sides):
-    """Combine which primer(s) Sanger confirms at a locus with which side(s)
-    NGS independently confirms there, into one "both" / "forward only" /
-    "reverse only" / "not verified" label.
 
-    NGS only fills in a side Sanger's own primers left unconfirmed - it
-    can't override a side Sanger already confirmed, since for that side
-    both calls already agree ("confirmed") regardless. sanger_sides and
-    ngs_sides are both iterables of "forward"/"reverse" (or empty) - see
-    compare_sanger_ngs.py (per Sanger site) and sanger_stats.py's
-    position_counts (pooled across every clone sharing a locus).
+# Which sides each ngs_verification_label result stands for; the labels that
+# say nothing about sides are simply absent.
+NGS_LABEL_SIDES = {
+    "both": {"forward", "reverse"},
+    "forward only": {"forward"},
+    "reverse only": {"reverse"},
+}
+
+
+def ngs_verification_label(ngs_sides, ngs_checked=True, ambiguous=False):
+    """What NGS alone says about a Sanger site: "both" / "forward only" /
+    "reverse only" / "ambiguous" / "no NGS site nearby" / "not verified".
+
+    Deliberately says nothing about which primer(s) Sanger itself confirmed -
+    that is already in the Sanger columns (n_forward/n_reverse,
+    forward_status/reverse_status). ngs_sides is an iterable of
+    "forward"/"reverse" (or empty) - see compare_sanger_ngs.py (per Sanger
+    site) and sanger_stats.py's position_counts (pooled across every clone
+    sharing a locus). It covers two tiers the caller has already merged: a
+    side from a fully called, orientation-resolved NGS *site* nearby, or -
+    lacking that - a side from a single NGS *peak* landing at the exact same
+    base (see PEAK_SIDE_DIRECTIONS), weaker evidence than a called site but
+    still an exact positional match rather than "somewhere nearby".
+
+    ngs_checked distinguishes "NGS was matched to a site or exact-position
+    peak here but gave no usable side (e.g. its strand contradicts Sanger's,
+    so "not verified")" from "there was nothing from NGS within the matching
+    distance at all" ("no NGS site nearby").
+
+    ambiguous says the NGS sites around the Sanger position disagree with
+    each other (orientation or which sides they show - see
+    compare_sanger_ngs.py), so which of them the Sanger read really belongs
+    to is unknown and none of their sides can be attributed to it.
     """
-    sides = set(sanger_sides) | set(ngs_sides)
-    if sides >= {"forward", "reverse"}:
+    if ambiguous:
+        return "ambiguous"
+    ngs_sides = set(ngs_sides)
+    if ngs_sides >= NGS_LABEL_SIDES["both"]:
         return "both"
-    if sides == {"forward"}:
+    if ngs_sides == {"forward"}:
         return "forward only"
-    if sides == {"reverse"}:
+    if ngs_sides == {"reverse"}:
         return "reverse only"
-    return "not verified"
+    return "not verified" if ngs_checked else "no NGS site nearby"
 
 
 # UCSC's colorByStrand track attribute: '+' strand features render red,
@@ -288,16 +371,19 @@ def clone_color(
     """Which of CLONE_GREEN/YELLOW/RED a clone's status maps to.
 
     - green: both sides confirmed and agree on position; or only one side
-      passed and NGS independently confirms both sides at that locus (see
+      passed and NGS shows both sides at that locus (see
       ngs_verification_label) - regardless of whether the other primer was
       never sequenced or sequenced and failed, since neither case is
       positive confirmation of the missing side on its own.
     - yellow: only one side passed, and NGS did not confirm both sides
-      there (no NGS data, nothing found, or NGS itself only one-sided).
+      there (no NGS data, nothing found, ambiguous, or NGS itself only
+      one-sided on the same side Sanger saw).
     - red: neither side passed, or both passed individually but disagree on
       position - positive evidence of a conflict, which NGS cannot rescue
       (see ngs_verification_label's "disagreeing" clones - checking NGS
-      there is informational only, not a path back to green).
+      there is informational only, not a path back to green); or only one
+      side passed and NGS shows only the opposite side there, so the side
+      Sanger saw is absent from NGS at its own site - also a conflict.
     """
     if both_sides_confirmed:
         return CLONE_GREEN
@@ -306,7 +392,11 @@ def clone_color(
     if forward_pass and reverse_pass:
         return CLONE_RED  # both passed, but both_sides_confirmed is False: positions disagree
     if forward_pass or reverse_pass:
-        return CLONE_GREEN if ngs_verification == "both" else CLONE_YELLOW
+        passed_side = "forward" if forward_pass else "reverse"
+        ngs_sides = NGS_LABEL_SIDES.get(ngs_verification, set())
+        if ngs_sides and passed_side not in ngs_sides:
+            return CLONE_RED  # NGS sees only the side Sanger did not
+        return CLONE_GREEN if ngs_sides >= NGS_LABEL_SIDES["both"] else CLONE_YELLOW
     return CLONE_RED
 
 
@@ -382,24 +472,26 @@ def parse_well(clone):
     return ord(row.upper()) - ord("A"), int(col) - 1
 
 
-CLONE_ID_RE = re.compile(r"^plate(\d+)_(.+)$")
+CLONE_ID_RE = re.compile(r"^(?:(batch2)_)?plate(\d+)_(.+)$")
 
 
 def rename_clone_id(sample_name, clone):
-    """"plateN_POOL" sample name and its raw well/clone id, in this lab's own
-    shorthand - "POOLplN" for the sample, and the plate number folded onto
-    the front of the well/clone id (e.g. "plate1_R"/"A02" -> "Rpl1"/"1A02")
-    so a clone id alone still says which plate it came from once the sample
-    name is dropped (e.g. in a dedup list's "(+N others)" name, or a well
-    grid's own label). Left untouched if sample_name isn't in the
-    "plateN_POOL" form this project's sample sheets use - e.g. NGS sample
-    names, which never are.
+    """"plateN_POOL" (or "batch2_plateN_POOL") sample name and its raw
+    well/clone id, in this lab's own shorthand - "POOLplN" (or "b2POOLplN"
+    for batch 2) for the sample, and the plate number folded onto the front
+    of the well/clone id (e.g. "plate1_R"/"A02" -> "Rpl1"/"1A02",
+    "batch2_plate1_R"/"A02" -> "b2Rpl1"/"1A02") so a clone id alone still
+    says which plate it came from once the sample name is dropped (e.g. in a
+    dedup list's "(+N others)" name, or a well grid's own label). Left
+    untouched if sample_name isn't in either form this project's sample
+    sheets use - e.g. NGS sample names, which never are.
     """
     match = CLONE_ID_RE.match(str(sample_name))
     if match is None:
         return sample_name, clone
-    plate_num, pool = match.groups()
-    return f"{pool}pl{plate_num}", f"{plate_num}{clone}"
+    batch, plate_num, pool = match.groups()
+    prefix = "b2" if batch else ""
+    return f"{prefix}{pool}pl{plate_num}", f"{plate_num}{clone}"
 
 
 def plate_layout(positions):
@@ -473,3 +565,240 @@ def format_cell(value):
     if isinstance(value, float):
         return f"{value:.2f}"
     return str(value)
+
+
+# --- Barcode demultiplexing (demux_barcodes.py) ------------------------------
+
+BARCODE_COLUMNS = ["plate", "side", "barcode"]
+BARCODE_SIDES = ("forward", "reverse")
+
+
+def prefix_distance(a, b):
+    """Hamming distance between two barcodes over their shared prefix.
+
+    Staggered barcodes differ in length, but a read is only ever compared to a
+    barcode over that barcode's own length, so two of them are confusable to
+    the extent that their common prefix is - never more.
+    """
+    n = min(len(a), len(b))
+    return sum(x != y for x, y in zip(a[:n], b[:n]))
+
+
+def read_barcodes(path, max_mismatch=1):
+    """Read and validate a barcode sheet (columns plate, side, barcode).
+
+    Several barcodes may share a plate and side - a plate pooled over a mix of
+    staggered-length barcodes for Illumina's sake - and all of them label that
+    plate. Checked here, at parse time, rather than left to misassign reads
+    quietly later: every barcode has to stay distinguishable from every other
+    after up to max_mismatch errors, i.e. their prefix distance has to exceed
+    2*max_mismatch. That also rules out one barcode being a prefix of another,
+    which would make the length to trim ambiguous.
+    """
+    barcodes = pd.read_table(path, comment="#", dtype=str).dropna(how="all")
+    missing = [c for c in BARCODE_COLUMNS if c not in barcodes.columns]
+    if missing:
+        raise ValueError(
+            f"Barcode sheet {path} is missing column(s) {missing}; it needs "
+            f"{BARCODE_COLUMNS}."
+        )
+    barcodes = barcodes[BARCODE_COLUMNS].apply(lambda s: s.str.strip())
+    barcodes["barcode"] = barcodes["barcode"].str.upper()
+    barcodes["side"] = barcodes["side"].str.lower()
+    bad_side = barcodes[~barcodes["side"].isin(BARCODE_SIDES)]
+    if bad_side.shape[0]:
+        raise ValueError(
+            f"Barcode sheet {path}: side must be one of {BARCODE_SIDES}, got "
+            f"{sorted(bad_side['side'].unique())}."
+        )
+    bad_seq = barcodes[~barcodes["barcode"].str.fullmatch(r"[ACGT]+")]
+    if bad_seq.shape[0]:
+        raise ValueError(
+            f"Barcode sheet {path}: barcodes may only contain A, C, G, T; got "
+            f"{sorted(bad_seq['barcode'].unique())}."
+        )
+    if barcodes.shape[0] == 0:
+        raise ValueError(f"Barcode sheet {path} has no barcodes.")
+    if barcodes["barcode"].duplicated().any():
+        raise ValueError(
+            f"Barcode sheet {path}: barcode(s) listed more than once: "
+            f"{sorted(barcodes.loc[barcodes['barcode'].duplicated(), 'barcode'])}."
+        )
+    rows = list(barcodes.itertuples(index=False))
+    for i, first in enumerate(rows):
+        for second in rows[i + 1 :]:
+            distance = prefix_distance(first.barcode, second.barcode)
+            if distance <= 2 * max_mismatch:
+                raise ValueError(
+                    f"Barcodes {first.barcode} ({first.plate}, {first.side}) and "
+                    f"{second.barcode} ({second.plate}, {second.side}) differ at "
+                    f"only {distance} position(s) over their shared prefix, so "
+                    f"reads can't be told apart with up to {max_mismatch} "
+                    f"mismatch(es) allowed (needs more than {2 * max_mismatch})."
+                )
+    return barcodes.reset_index(drop=True)
+
+
+# --- Per-clone NGS calls (ngs_clone_stats.py) --------------------------------
+
+CLONE_STATUS_CLEAN = "clean"
+CLONE_STATUS_CONTAMINATED = "contaminated"
+CLONE_STATUS_MULTIPLE = "multiple"
+CLONE_STATUS_UNMOBILIZED = "unmobilized"
+CLONE_STATUS_WEAK = "weak"
+CLONE_STATUS_NO_INSERTION = "no_insertion"
+CLONE_STATUS_TOO_FEW_READS = "too_few_reads"
+
+# Same palette as the Sanger clone grid, so a plate reads the same way
+# whichever assay it came from: green is a usable single site, yellow is
+# usable but worth a look, red is not usable, grey is not enough data to say.
+CLONE_STATUS_COLORS = {
+    CLONE_STATUS_CLEAN: CLONE_GREEN,
+    CLONE_STATUS_UNMOBILIZED: CLONE_GREEN,
+    CLONE_STATUS_CONTAMINATED: CLONE_YELLOW,
+    CLONE_STATUS_WEAK: CLONE_YELLOW,
+    CLONE_STATUS_MULTIPLE: CLONE_RED,
+    CLONE_STATUS_NO_INSERTION: CLONE_RED,
+    CLONE_STATUS_TOO_FEW_READS: READ_QC_GREY,
+}
+
+CLONE_SUMMARY_COLUMNS = [
+    "sample_name",
+    "plate",
+    "well",
+    "status",
+    "n_pairs",
+    "n_sites",
+    "n_molecules",
+    "chrom",
+    "start",
+    "end",
+    "strand",
+    "sides",
+    "dominant_molecules",
+    "dominant_frac",
+    "second_position",
+    "second_molecules",
+    "second_frac",
+    "n_secondary_sites",
+    "contaminated_by",
+    "at_original_site",
+    "founder_molecules",
+    "founder_frac",
+    "shared_with",
+    "reason",
+]
+
+# Columns of ngs_clone_summary.tsv shown in the reports - the rest (end, plate,
+# well, the raw molecule counts of the runner-up) are in the TSV for whoever
+# wants them, but make the table too wide to read.
+CLONE_REPORT_COLUMNS = [
+    "sample_name",
+    "status",
+    "n_pairs",
+    "n_sites",
+    "chrom",
+    "start",
+    "strand",
+    "sides",
+    "dominant_molecules",
+    "dominant_frac",
+    "second_position",
+    "second_frac",
+    "contaminated_by",
+    "shared_with",
+    "reason",
+]
+
+
+def clone_plate_wells(group):
+    """{(row, col): (title, colour, marker)} for one plate of ngs_clone_summary
+    rows, for drawing its well grid. Wells whose library name does not parse
+    as a well (see parse_well) are left out, since not every project names its
+    libraries after wells. Unmobilized clones get a "u", like the Sanger grid.
+    """
+    wells = {}
+    for row in group.itertuples():
+        position = parse_well(row.well)
+        if position is None:
+            continue
+        wells[position] = (
+            f"{row.well}: {row.status}",
+            CLONE_STATUS_COLORS.get(row.status, READ_QC_GREY),
+            "u" if row.status == CLONE_STATUS_UNMOBILIZED else None,
+        )
+    return wells
+
+
+def clone_plate_label(plate):
+    return f"Plate: {plate}" if isinstance(plate, str) and plate else "Plate"
+
+
+def demux_tables(stats):
+    """Per-library and per-plate summaries of demux_stats.tsv.
+
+    The raw file has a row per library, barcode and outcome - a useful audit
+    trail, but too long to read. Returns (libraries, plates): how each
+    library's pairs divided into assigned/unassigned, and how the assigned
+    ones divided over plates, with how many of the plate's barcodes turned up
+    at all (a barcode that never does is the first sign of a pooling mistake)
+    and how many matched only with mismatches.
+    """
+    outcomes = ["assigned", "no_barcode", "conflict", "primer_mismatch"]
+    totals = stats.pivot_table(
+        index="source", columns="category", values="n_pairs", aggfunc="sum", fill_value=0
+    ).reindex(columns=outcomes, fill_value=0)
+    totals["total_pairs"] = totals.sum(axis=1)
+    totals["frac_assigned"] = totals["assigned"] / totals["total_pairs"].where(
+        totals["total_pairs"] > 0
+    )
+    totals.columns.name = None
+    libraries = (
+        totals.rename(columns={"assigned": "assigned_pairs"})
+        .reset_index()
+        .rename(columns={"source": "library"})[
+            [
+                "library",
+                "total_pairs",
+                "assigned_pairs",
+                "frac_assigned",
+                "no_barcode",
+                "conflict",
+                "primer_mismatch",
+            ]
+        ]
+    )
+
+    assigned = stats[stats["category"] == "assigned"].copy()
+    assigned["with_mismatch"] = assigned["n_pairs"].where(assigned["mismatches"] > 0, 0)
+    plates = assigned.groupby(["source", "plate"]).agg(
+        assigned_pairs=("n_pairs", "sum"), with_mismatch=("with_mismatch", "sum")
+    )
+    # A barcode that matched both exactly and with mismatches has a row for
+    # each, so seen/listed are counted per distinct barcode.
+    per_barcode = assigned.groupby(["source", "plate", "barcode"])["n_pairs"].sum()
+    plates["barcodes"] = (
+        (per_barcode > 0).groupby(level=["source", "plate"]).sum().astype(int).astype(str)
+        + "/"
+        + per_barcode.groupby(level=["source", "plate"]).size().astype(str)
+    )
+    plates["frac_of_library"] = plates["assigned_pairs"] / plates.index.get_level_values(
+        "source"
+    ).map(totals["total_pairs"]).to_numpy()
+    plates["frac_with_mismatch"] = plates["with_mismatch"] / plates["assigned_pairs"].where(
+        plates["assigned_pairs"] > 0
+    )
+    plates = (
+        plates.reset_index()
+        .rename(columns={"source": "library"})[
+            [
+                "library",
+                "plate",
+                "assigned_pairs",
+                "frac_of_library",
+                "barcodes",
+                "frac_with_mismatch",
+            ]
+        ]
+    )
+    return libraries, plates

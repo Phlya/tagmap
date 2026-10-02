@@ -10,6 +10,33 @@ samples_path: 'config/samples.tsv'
 # Sanger runs: .ab1 traces or already basecalled fastq, one row per plate/run.
 sanger_samples_path: 'config/sanger_samples.tsv'
 
+# What an NGS library is. 'pool' (default): a population with many independent
+# insertions. 'clone': one clonal line expected to carry a single insertion
+# (a few hundred to a few thousand reads) - each library is then also judged on
+# whether one site dominates and nothing else is present, see
+# stats/ngs_clone_summary.tsv.
+ngs_mode: 'pool'
+# clone mode only:
+# clone_min_reads: 20                 # fewer mobilized pairs than this: too_few_reads
+# clone_min_molecules: 3              # the dominant site needs this many distinct molecules
+# clone_max_contamination_frac: 0.02  # another site this large: contaminated
+# clone_multi_site_frac: 0.2          # another site this large: multiple insertions
+# clone_require_both_sides: False     # call weak unless seen from both ITRs
+# clone_merge_dist: 0                 # fold one-sided sites this close, seen from opposite ITRs
+
+# Demultiplexing by in-read barcode, to split each library in samples_path by
+# plate - for libraries where the ITR primers carry a barcode in front of the
+# ITR sequence. TSV with columns plate, side (forward/reverse), barcode: the
+# barcodes of the forward ITR primer go on forward-ITR reads, the reverse ones
+# on reverse-ITR reads. A plate may have several barcodes per side (e.g.
+# staggered lengths for sequence diversity); a read carries any one of them.
+# Each library is split into one sample per plate, named {plate}_{name}.
+# Leave unset if the libraries are not barcoded.
+# barcodes_path: 'config/barcodes.tsv'
+# barcode_max_mismatch: 1           # barcodes are checked to stay distinguishable
+# barcode_reads: 'R2'               # the read that starts at the ITR primer
+# barcode_require_primer: False     # also require the ITR primer right after the barcode
+
 refgen_path: '../../../mm10_custom.fa'
 chrom_sizes_path: '../../../mobilization_mapping/mm10_custom_chromsizes.txt'
 # Chromsizes with just the original genome, without the cassette, to use for
@@ -22,6 +49,15 @@ blacklist: 'resources/blacklist_mm10_PB.bed'
 mapper: 'bwa-mem2'
 
 dedup: True
+
+# Drop molecules that fewer than this many reads support, counting the retained
+# read and the PCR duplicates marked against it. In an over-amplified library a
+# real fragment is copied many times, so a molecule seen exactly once saw no
+# amplification - on a real per-clone run those single-read molecules were 73%
+# of the scatter but only 34% of the dominant site. Needs dedup: True, and it
+# roughly halves every molecule count, so thresholds tuned without it have to
+# come down. 0 disables it.
+# min_reads_per_molecule: 0
 
 cassette_name: 'mobilized_enhancer'
 # Sequence of the primers used to amplify the cassette
@@ -124,6 +160,9 @@ original_insertion_max_dist: 25
 # one end but the NGS library saw both.
 validate_sanger_with_ngs: True
 validation_max_dist: 500
+# NGS sites within this distance of a Sanger site must all agree on
+# orientation and sides, or the clone's ngs_verification reads "ambiguous".
+validation_ambiguity_dist: 50
 
 # Every individual output path below defaults to living under here, so this
 # is usually the only one of the lot worth setting.

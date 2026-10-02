@@ -289,11 +289,10 @@ def summarize_clone_sites(group, original_site=None, max_dist=0, region=None):
 
 
 def summarize_clone_validation(group, original_site=None, max_dist=0):
-    """A clone's combined Sanger+NGS verification: "both", "forward only",
-    "reverse only", or "not verified" - the same per-row label
-    compare_sanger_ngs.py already computes (ngs_verification), which uses
-    NGS only to fill in a side Sanger's own primers left unconfirmed rather
-    than override a side Sanger already confirmed.
+    """A clone's NGS verification: "both", "forward only", "reverse only",
+    "ambiguous", "no NGS site nearby", or "not verified" - the same per-row
+    label compare_sanger_ngs.py already computes (ngs_verification), which
+    reports what NGS alone shows at the site, not which primers Sanger used.
 
     A clone whose Sanger reads disagree on locus (more than one row here)
     has no single locus to report a combined status for - disagreement
@@ -326,7 +325,9 @@ def summarize_clone_validation(group, original_site=None, max_dist=0):
             if row.confirmed_by_ngs
             else set()
         )
-        if sanger_sides != ngs_sides:
+        # NGS sites around this position disagree with each other, so there is
+        # no single NGS side pattern to compare Sanger's against.
+        if sanger_sides != ngs_sides or row.ngs_ambiguous:
             consistent = False
     label = "disagreeing (NGS consistent)" if consistent else "disagreeing (NGS inconsistent)"
     return pd.Series({"ngs_verification": label})
@@ -526,21 +527,31 @@ TOTAL_MOBILIZED_POSITIONS_LABEL = "total mobilized positions"
 
 
 def locus_ngs_verification(group):
-    """A locus's combined Sanger+NGS verification, pooling every clone that
-    landed there (see position_counts) rather than one clone at a time -
-    the same "both"/"forward only"/"reverse only"/"not verified" label as
-    compare_sanger_ngs.py's per-row ngs_verification, just evaluated across
-    the whole group's Sanger reads and NGS matches instead of one row's.
+    """A locus's NGS verification, pooling every clone that landed there (see
+    position_counts) rather than one clone at a time - the same "both"/
+    "forward only"/"reverse only"/"ambiguous"/"no NGS site nearby"/"not
+    verified" label as compare_sanger_ngs.py's per-row ngs_verification,
+    just evaluated across the whole group's NGS matches instead of one row's.
     """
-    sanger_sides = []
-    if (group["n_forward"] > 0).any():
-        sanger_sides.append("forward")
-    if (group["n_reverse"] > 0).any():
-        sanger_sides.append("reverse")
-    ngs_sides = []
+    ngs_sides = set()
     for sides_value in group.loc[group["confirmed_by_ngs"] == True, "ngs_site_sides"]:
-        ngs_sides.extend(tagmaplib.NGS_SIDE_SETS.get(sides_value, []))
-    return tagmaplib.ngs_verification_label(sanger_sides, ngs_sides)
+        ngs_sides.update(tagmaplib.NGS_SIDE_SETS.get(sides_value, []))
+    # Lacking a called site, an exact-position NGS peak is still real
+    # evidence - see compare_sanger_ngs.py's row_ngs_verification and
+    # tagmaplib.ngs_verification_label.
+    exact_peaks = group.loc[group["ngs_peak_dist"] == 0, "ngs_peak_side"]
+    for side_symbol in exact_peaks:
+        direction = tagmaplib.PEAK_SIDE_DIRECTIONS.get(side_symbol)
+        if direction:
+            ngs_sides.add(direction)
+    ngs_checked = bool(
+        group["ngs_site_dist"].notna().any() or (group["ngs_peak_dist"] == 0).any()
+    )
+    return tagmaplib.ngs_verification_label(
+        ngs_sides,
+        ngs_checked=ngs_checked,
+        ambiguous=bool((group["ngs_ambiguous"] == True).any()),
+    )
 
 
 def position_counts(site_clusters, original_site=None, max_dist=0):
@@ -585,9 +596,10 @@ def position_counts(site_clusters, original_site=None, max_dist=0):
 
     When NGS validation is available (site_clusters carries confirmed_by_ngs
     and ngs_site_sides - see compare_sanger_ngs.py), an NGS_VERIFICATION_COLUMN
-    is added: the combined Sanger+NGS verification for every clone pooled
+    is added: the NGS verification for every clone pooled
     into that row (see locus_ngs_verification) - "both", "forward only",
-    "reverse only", or "not verified". NA for DISAGREEING_CLONES_LABEL (both
+    "reverse only", "ambiguous", "no NGS site nearby", or "not verified". NA for
+    DISAGREEING_CLONES_LABEL (both
     primers there were confirmed, just on different sites - not a case of
     one side being unverified) and for the two totals, neither of which is
     one locus.
@@ -676,7 +688,10 @@ if not args.reads:
     read_qc = pd.DataFrame(columns=READ_QC_COLUMNS)
 else:
     reads = pd.concat(
-        (pd.read_csv(path, sep="\t", dtype={"chrom": str}) for path in args.reads),
+        (
+            pd.read_csv(path, sep="\t", dtype={"chrom": str, PLATE_RUN_COLUMN: str})
+            for path in args.reads
+        ),
         ignore_index=True,
     )
     reads["pass"] = tagmaplib.to_bool(reads["pass"])
@@ -786,6 +801,10 @@ if args.validation is not None:
     validation = pd.read_csv(args.validation, sep="\t", dtype={"chrom": str})
     if validation.shape[0] and "confirmed_by_ngs" in validation.columns:
         validation["confirmed_by_ngs"] = tagmaplib.to_bool(validation["confirmed_by_ngs"])
+        if "ngs_ambiguous" in validation.columns:
+            validation["ngs_ambiguous"] = tagmaplib.to_bool(validation["ngs_ambiguous"])
+        else:
+            validation["ngs_ambiguous"] = False
     else:
         validation = None
 
@@ -802,7 +821,14 @@ if args.sites is not None:
         site_clusters = site_clusters.merge(
             validation[
                 ["sample_name", "clone", "chrom", "start", "end"]
-                + ["confirmed_by_ngs", "ngs_site_sides"]
+                + [
+                    "confirmed_by_ngs",
+                    "ngs_ambiguous",
+                    "ngs_site_sides",
+                    "ngs_site_dist",
+                    "ngs_peak_dist",
+                    "ngs_peak_side",
+                ]
             ],
             on=["sample_name", "clone", "chrom", "start", "end"],
             how="left",

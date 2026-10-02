@@ -172,11 +172,11 @@ check(
 
 # A01 was sequenced from both primers, B01 only ever had a forward read - the
 # reverse primer was never attempted for it, rather than attempted and failed.
-# Both clones' sites matched a two-sided NGS site (checked above). A01 is
-# already "both" from Sanger alone; B01's ngs_verification should ALSO read
-# "both" - not because Sanger saw its reverse side, but because NGS fills in
-# exactly the side Sanger's own primers left unconfirmed (see
-# tagmaplib.ngs_verification_label). The test config also points
+# Both clones' sites matched a two-sided NGS site (checked above), so both
+# clones' ngs_verification reads "both" - it reports what NGS alone shows,
+# regardless of which primers Sanger used (see
+# tagmaplib.ngs_verification_label); B01 is still colored validated because
+# NGS shows the side its forward-only Sanger read lacks. The test config also points
 # original_insertion_site at A01's own planted insertion (chr1:8000): A01
 # still has a real, confirmed site there (from both primers, agreeing on
 # position), it just happens to be the founder's own locus, so it is
@@ -250,8 +250,8 @@ UNMOBILIZED_LABEL = "unmobilized: at the original insertion site"
 TOTAL_CLONES_LABEL = "clones with at least one good read"
 TOTAL_MOBILIZED_POSITIONS_LABEL = "total mobilized positions"
 # C01's test_launchpad locus adds a third clone and a second real, distinct
-# mobilized position - one-sided in Sanger, and (unlike B01) not completed
-# by NGS since it has none, so its own ngs_verification reads "forward only"
+# mobilized position - one-sided in Sanger, and (unlike B01) with no NGS
+# site nearby at all, so its own ngs_verification reads "no NGS site nearby"
 # rather than "both". It is not a founder/unmobilized site, so it does not
 # touch the A01/UNMOBILIZED_LABEL row.
 position_counts = pd.read_csv("results/stats/sanger_position_counts.tsv", sep="\t")
@@ -261,7 +261,7 @@ by_label = position_counts.set_index("chrom")[
 check(
     position_counts.shape[0] == 5
     and tuple(by_label.loc["chr1"]) == (1, 1, "both")
-    and tuple(by_label.loc[LAUNCHPAD_CONTIG]) == (1, 1, "forward only")
+    and tuple(by_label.loc[LAUNCHPAD_CONTIG]) == (1, 1, "no NGS site nearby")
     and tuple(by_label.loc[UNMOBILIZED_LABEL]) == (1, 0, "both")
     and by_label.loc[TOTAL_CLONES_LABEL, "n_times_found"] == 3
     and by_label.loc[TOTAL_MOBILIZED_POSITIONS_LABEL, "n_times_found"] == 2,

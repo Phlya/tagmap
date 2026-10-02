@@ -54,6 +54,7 @@ sanger_max_dist: 100
 # Cross-validation of Sanger sites against NGS sites, when both are configured
 validate_sanger_with_ngs: True
 validation_max_dist: 500
+validation_ambiguity_dist: 50
 
 results_folder: '../Data/Processed/T1/'
 fastq_folder: '../Data/Raw/T1/fastq/'

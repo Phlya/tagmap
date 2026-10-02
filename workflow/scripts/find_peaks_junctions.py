@@ -350,11 +350,18 @@ if args.motif_max_support and args.genome:
     thin = peaks["n_junction_frags"] <= args.motif_max_support
     candidates = peaks.loc[thin].assign(strand="+")
     if candidates.shape[0]:
+        # The peak interval is 1bp - the junction base itself - so searching
+        # it with no slop at all could never fit a motif longer than 1bp
+        # regardless of junction_jitter (e.g. jitter=0, a legitimate choice
+        # for clustering closely-packed insertions, would make this check a
+        # silent no-op). The motif's own length is a window guaranteed wide
+        # enough to contain it while still favouring the occurrence right at
+        # the junction under mode="nearest".
         motif_start = tagmaplib.find_insertion_seq(
             candidates,
             args.genome,
             args.insertion_seq,
-            window=args.junction_jitter,
+            window=len(args.insertion_seq),
             mode="nearest",
             index_file=args.genome_index,
         )

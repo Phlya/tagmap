@@ -54,6 +54,33 @@ argparser.add_argument(
     "risks a confident, wrong strand call. 0 disables the check.",
 )
 argparser.add_argument(
+    "--evidence",
+    nargs="*",
+    default=[],
+    help="{sample}_{side}_evidence.tsv files (only the junction_tiered peak "
+    "caller writes these - see find_peaks_junctions.py). Lets a peak's own "
+    "junction/anchor tier back a resolved orientation on far less pooled "
+    "support than --min-orientation-support normally requires, via "
+    "--min-orientation-support-confirmed. Ignored (no per-peak tier to use) "
+    "without that.",
+)
+argparser.add_argument(
+    "--min-orientation-support-confirmed",
+    type=int,
+    default=0,
+    help="Molecule-count floor for a cluster's orientation when only "
+    "*junction-tier* peaks are pooled - much lower than "
+    "--min-orientation-support is appropriate, since a junction-tier peak "
+    "already cleared its own evidence bar on the way in (a directly "
+    "sequenced junction, plus a TA-motif check for a thinly-supported one - "
+    "see find_peaks_junctions.py's motif_max_support). An orientation is "
+    "trusted if it clears *either* threshold - this one on junction-tier "
+    "support alone, or --min-orientation-support on every peak pooled "
+    "together. 0 (default) disables this, falling back to "
+    "--min-orientation-support for every peak regardless of tier. Has no "
+    "effect without --evidence.",
+)
+argparser.add_argument(
     "--chromsizes",
     default=None,
     help="Chrom sizes of the genome alone (chrom_sizes_path_no_cassette). "
@@ -63,6 +90,13 @@ argparser.add_argument(
 )
 argparser.add_argument("--output", "-o", required=True)
 argparser.add_argument("--output-for-ucsc", required=True)
+argparser.add_argument(
+    "--output-support",
+    default=None,
+    help="Optional TSV with how many independent molecules (distinct "
+    "tagmentation positions, as counted by the peak caller) back each site "
+    "from each ITR side. Same sites, in the same order, as --output.",
+)
 argparser.add_argument(
     "--output-confirmed",
     required=True,
@@ -77,6 +111,15 @@ argparser.add_argument(
     help="--output-confirmed with the construct/landing-pad contigs dropped "
     "(see --chromsizes).",
 )
+
+
+SUPPORT_COLUMNS = tagmaplib.SITE_COLUMNS[:4] + [
+    "strand",
+    "site_sides",
+    "n_forward",
+    "n_reverse",
+    "n_molecules",
+]
 
 
 def determine_direction(series):
@@ -98,7 +141,7 @@ def determine_direction(series):
         return "."
 
 
-def cluster_orientation(group, min_support=0):
+def cluster_orientation(group, min_support=0, min_support_confirmed=0):
     """Orientation of one cluster of peaks, preferring what the reads said.
 
     A single peak's own molecule count is how much its stated orientation is
@@ -109,6 +152,23 @@ def cluster_orientation(group, min_support=0):
     requiring one single peak to individually clear the bar - one peak of
     32 molecules and another of 45 agreeing are together as trustworthy as
     one peak of 77.
+
+    A peak that is itself junction-tier (group's own "tier" column, from
+    find_peaks_junctions.py's evidence files - absent entirely for other peak
+    callers) already cleared its own bar on the way in - a directly
+    sequenced junction, plus a TA-motif check for one thinly supported (see
+    find_peaks_junctions.py's motif_max_support). But that check alone is
+    still not strong: a *single* junction-tier peak's own calibration says
+    even a TA-confirmed one is only right about 70% of the time (see
+    find_peaks_junctions.py's own comment on the underlying 48%-vs-23% TA
+    rates), so it must not be allowed to outvote an orientation that already
+    cleared min_support on its own - a strong, ordinary call with one weak,
+    plausibly-spurious peak opposing it would otherwise flip from resolved
+    to a tie. It only gets a say once ordinary pooling found *nothing*
+    confident at all: then, and only then, junction-tier support alone is
+    checked against the much lower min_support_confirmed floor, so a
+    both-sided site with no other evidence at all can still be rescued by
+    one good junction+TA read rather than being left at ".".
 
     determine_direction is a *different*, weaker fallback, only for peak
     callers (e.g. "coverage") that never compute an orientation at all - it
@@ -123,12 +183,16 @@ def cluster_orientation(group, min_support=0):
     stated = group[group["orientation"].isin(["+", "-"])]
     pooled = stated.groupby("orientation")["count"].sum()
     confident = pooled[pooled >= min_support] if min_support else pooled
+    if len(confident) == 0 and min_support_confirmed and "tier" in stated.columns:
+        junction_pooled = stated.loc[stated["tier"] == "junction"].groupby("orientation")[
+            "count"
+        ].sum()
+        confident = junction_pooled[junction_pooled >= min_support_confirmed]
     if len(confident) == 1:
         return confident.index[0]
-    # Either multiple orientations each pooled enough support to be
-    # confident - a real conflict - or none did - either way, better to say
-    # nothing than fall back to a guess the peaks themselves didn't clear
-    # the bar for.
+    # Either multiple orientations each cleared a floor - a real conflict -
+    # or none did - either way, better to say nothing than fall back to a
+    # guess the peaks themselves didn't clear a bar for.
     return "."
 
 
@@ -163,6 +227,10 @@ if __name__ == "__main__":
         empty[tagmaplib.SITE_COLUMNS].to_csv(
             args.output_for_ucsc, sep="\t", index=False, header=False
         )
+        if args.output_support is not None:
+            pd.DataFrame(columns=SUPPORT_COLUMNS).to_csv(
+                args.output_support, sep="\t", index=False
+            )
         tagmaplib.write_bed(empty, args.output_confirmed, columns=tagmaplib.SITE_COLUMNS)
         tagmaplib.write_bed(
             empty, args.output_confirmed_no_cassette, columns=tagmaplib.SITE_COLUMNS
@@ -176,6 +244,32 @@ if __name__ == "__main__":
     )
     if peaks["n_positions"].isnull().all():
         peaks["n_positions"] = 1
+
+    # Merged in before --snap-window can move a peak's own start/end, since
+    # the evidence files carry find_peaks_junctions.py's original, unsnapped
+    # coordinates.
+    if args.evidence:
+        tier_frames = []
+        for path in args.evidence:
+            sample, side = tagmaplib.sample_and_side(path, "_evidence.tsv")
+            try:
+                ev = pd.read_csv(path, sep="\t", dtype={"chrom": str})
+            except pd.errors.EmptyDataError:
+                continue
+            if ev.shape[0] == 0:
+                continue
+            ev = ev[["chrom", "start", "end", "tier"]].copy()
+            ev["sample_name"] = sample
+            # find_peaks_junctions.py's evidence files are per read-direction
+            # (forward/reverse), not the +/- combine_peaks.py encodes that as
+            # in all_peaks.bed's own "side" column.
+            ev["side"] = "+" if side == "forward" else "-"
+            tier_frames.append(ev)
+        if tier_frames:
+            tiers = pd.concat(tier_frames, ignore_index=True)
+            peaks = peaks.merge(
+                tiers, on=["chrom", "start", "end", "sample_name", "side"], how="left"
+            )
 
     if args.snap_window:
         # Every peak already has its own orientation ("+"/"-", never "." -
@@ -207,6 +301,7 @@ if __name__ == "__main__":
     orientations = peaks.groupby("cluster").apply(
         cluster_orientation,
         min_support=args.min_orientation_support,
+        min_support_confirmed=args.min_orientation_support_confirmed,
         include_groups=False,
     )
     peaks["strand"] = peaks["cluster"].map(orientations)
@@ -216,15 +311,32 @@ if __name__ == "__main__":
     peaks["end"] = peaks["cluster_end"]
 
     peaks = peaks[
-        ["chrom", "start", "end", "sample_name", "fraction", "strand", "site_sides"]
-    ]
+        [
+            "chrom",
+            "start",
+            "end",
+            "sample_name",
+            "fraction",
+            "strand",
+            "site_sides",
+            "side",
+            "count",
+        ]
+    ].copy()
+    peaks["n_forward"] = peaks["count"].where(peaks["side"] == "+", 0)
+    peaks["n_reverse"] = peaks["count"].where(peaks["side"] == "-", 0)
     peaks = (
         peaks.groupby(
             ["chrom", "start", "end", "sample_name", "strand", "site_sides"]
-        )["fraction"]
-        .mean()
+        )
+        .agg(
+            fraction=("fraction", "mean"),
+            n_forward=("n_forward", "sum"),
+            n_reverse=("n_reverse", "sum"),
+        )
         .reset_index()
     )
+    peaks["n_molecules"] = peaks["n_forward"] + peaks["n_reverse"]
     peaks["score"] = (peaks["fraction"] * 1000).round().astype(int)
     peaks = peaks.drop_duplicates().reset_index(drop=True)
     peaks = bioframe.expand(peaks, len(ins_seq))
@@ -238,11 +350,16 @@ if __name__ == "__main__":
     pinpointed[f"{ins_seq}_found"] = found
     pinpointed.loc[found, "start"] = site[found]
     pinpointed.loc[found, "end"] = site[found] + 1
+    support = pinpointed[SUPPORT_COLUMNS]
     pinpointed = pinpointed[tagmaplib.SITE_COLUMNS + [f"{ins_seq}_found", "site_sides"]]
 
     pinpointed.sort_values(["chrom", "start", "end", "sample_name"]).to_csv(
         args.output, sep="\t", index=False, header=True
     )
+    if args.output_support is not None:
+        support.sort_values(["chrom", "start", "end", "sample_name"]).to_csv(
+            args.output_support, sep="\t", index=False
+        )
 
     pinpointed[tagmaplib.SITE_COLUMNS].sort_values(
         ["sample_name", "chrom", "start", "end"]
